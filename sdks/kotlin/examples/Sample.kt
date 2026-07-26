@@ -1,4 +1,4 @@
-// Generates a pair of synthetic game builds (v1 and v2) so the CAVS examples
+// Generates a pair of synthetic builds (v1 and v2) so the CAVS examples
 // can run end to end without bringing your own data.
 //
 // v2 is derived from v1 with a realistic mix of changes: some files stay
@@ -20,20 +20,20 @@ fun generateBuilds(root: Path): Builds {
 
     val level2 = filler("level-two", 2 * 1024 * 1024)
     val files1 = mapOf(
-        "game.exe" to filler("engine-core", 512 * 1024),
+        "app.exe" to filler("engine-core", 512 * 1024),
         "data/level1.pak" to filler("level-one", 2 * 1024 * 1024),
         "data/level2.pak" to level2,
         "assets/textures.bin" to filler("textures", 3 * 1024 * 1024),
-        "README.txt" to "CAVS demo game v1\n".toByteArray(),
+        "README.txt" to "CAVS demo build v1\n".toByteArray(),
     )
     writeTree(v1, files1)
 
     // level1.pak + textures.bin: identical (fully reused).
-    // game.exe: a small region changed (mostly reused).
+    // app.exe: a small region changed (mostly reused).
     // level2.pak: a tail appended (mostly reused).
     // level3.pak: brand new. README.txt: deleted.
     val files2 = mapOf(
-        "game.exe" to patch(files1["game.exe"]!!, 4096, "engine-core v2 hotfix"),
+        "app.exe" to patch(files1["app.exe"]!!, 4096, "engine-core v2 hotfix"),
         "data/level1.pak" to files1["data/level1.pak"]!!,
         "data/level2.pak" to (level2 + filler("level-two-dlc", 256 * 1024)),
         "data/level3.pak" to filler("level-three", 2 * 1024 * 1024),

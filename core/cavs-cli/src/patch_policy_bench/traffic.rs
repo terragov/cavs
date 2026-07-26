@@ -2,7 +2,7 @@
 //!
 //! A policy comparison is meaningless without an update-behavior
 //! assumption — adjacent diffs look perfect if everyone updates every
-//! release and terrible if half the players return after five patches.
+//! release and terrible if half the clients return after five patches.
 //! Built-in models cover the common shapes; custom TOML files describe
 //! measured telemetry.
 
@@ -270,7 +270,7 @@ mod tests {
             &path,
             r#"
 [traffic]
-name = "adjacent-heavy-live-game"
+name = "adjacent-heavy-live-service"
 users = 100000
 
 [[traffic.rule]]

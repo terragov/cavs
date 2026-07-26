@@ -1,7 +1,7 @@
 # Embeddable fetch engine (`cavs-fetch`, v1.4.0)
 
 `cavs-fetch` is the serverless install/update path as a **library**, so a
-launcher or a game can self-update **in-process** — no `cavs-server`, no
+launcher, installer or application can self-update **in-process** — no `cavs-server`, no
 shelling out to the CLI, no re-implementation of the protocol. It is exposed
 three ways:
 
@@ -30,7 +30,7 @@ and can enforce an Ed25519 content signature.
 use cavs_fetch::{fetch_static, FetchOptions, StaticSource};
 use std::sync::atomic::AtomicBool;
 
-let source = StaticSource::new("https://cdn.example.com/game"); // or a local dir
+let source = StaticSource::new("https://cdn.example.com/dist"); // or a local dir
 let cancel = AtomicBool::new(false);
 let on_progress = |done: u64, total: u64| {
     println!("{:.0}%", if total == 0 { 100.0 } else { done as f64 * 100.0 / total as f64 });
@@ -41,7 +41,7 @@ let opts = FetchOptions {
     progress: Some(&on_progress),
     cancel: Some(&cancel),
 };
-let stats = fetch_static(&source, "game", "./install".as_ref(), "./cache".as_ref(), &opts)?;
+let stats = fetch_static(&source, "app", "./install".as_ref(), "./cache".as_ref(), &opts)?;
 println!("fetched {}, reused {}, saved {:.1}%",
     stats.fetched, stats.reused,
     100.0 - stats.wire_bytes as f64 * 100.0 / stats.logical_bytes as f64);
@@ -56,7 +56,7 @@ cancellation flow through each SDK's usual mechanism.
 // Node
 const cavs = new CavsClient();
 const r = await cavs.fetchStatic(
-  { base: "https://cdn.example.com/game", asset: "game",
+  { base: "https://cdn.example.com/dist", asset: "app",
     outputDir: "./install", cacheDir: "./cache", connections: 8 },
   { onProgress: e => console.log(e.percentage) });
 console.log(r.chunksFetched, r.chunksReused, r.savedPercent);
@@ -65,7 +65,7 @@ console.log(r.chunksFetched, r.chunksReused, r.savedPercent);
 ```go
 // Go
 r, _ := client.FetchStatic(ctx, cavs.FetchStaticRequest{
-    Base: "https://cdn.example.com/game", Asset: "game",
+    Base: "https://cdn.example.com/dist", Asset: "app",
     OutputDir: "./install", CacheDir: "./cache", Connections: 8,
 })
 ```
@@ -73,7 +73,7 @@ r, _ := client.FetchStatic(ctx, cavs.FetchStaticRequest{
 ```kotlin
 // Kotlin
 val r = cavs.fetchStatic(FetchStaticRequest(
-    base = "https://cdn.example.com/game", asset = "game",
+    base = "https://cdn.example.com/dist", asset = "app",
     outputDir = "./install", cacheDir = "./cache", connections = 8))
 ```
 
@@ -88,7 +88,7 @@ CavsContext *ctx = cavs_context_new("{}");
 cavs_context_set_progress_callback(ctx, on_progress, user_data);
 const char *req =
   "{\"schemaVersion\":\"1.0\",\"data\":{"
-  "\"base\":\"https://cdn.example.com/game\",\"asset\":\"game\","
+  "\"base\":\"https://cdn.example.com/dist\",\"asset\":\"app\","
   "\"outputDir\":\"./install\",\"cacheDir\":\"./cache\",\"connections\":8}}";
 CavsJob *job = cavs_start_json(ctx, "fetchStatic", req);
 CavsResult *res;
@@ -111,5 +111,5 @@ READMEs.
 ## Cache interop
 
 The cache layout (`<root>/<ab>/<hex>`, raw payloads) is identical to the
-`cavs-client` cache, so a game embedding `cavs-fetch` and the CLI can share one
+`cavs-client` cache, so an application embedding `cavs-fetch` and the CLI can share one
 cache directory.

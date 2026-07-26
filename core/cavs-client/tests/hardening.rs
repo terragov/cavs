@@ -171,13 +171,13 @@ fn interrupted_bootstrap_resumes_with_range() {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     let payload = build_like(8 * 1024 * 1024, 42);
-    let cavs = pack_with_bootstrap(d, "game", &payload);
+    let cavs = pack_with_bootstrap(d, "app", &payload);
     let (_guard, url) = spawn_server(&[&cavs]);
 
     let cache = d.join("cache");
     let out_dir = d.join("out");
     let keep = 512 * 1024;
-    let (full_len, part) = fabricate_interrupted_bootstrap(d, &cache, &url, "game", &out_dir, keep);
+    let (full_len, part) = fabricate_interrupted_bootstrap(d, &cache, &url, "app", &out_dir, keep);
 
     // `resume` picks the journal up and continues the download.
     let (ok, out) = run(
@@ -189,11 +189,11 @@ fn interrupted_bootstrap_resumes_with_range() {
         out.contains("continuing bootstrap download"),
         "no range resume happened:\n{out}"
     );
-    assert_eq!(std::fs::read(out_dir.join("game.pck")).unwrap(), payload);
+    assert_eq!(std::fs::read(out_dir.join("app.pck")).unwrap(), payload);
     // Only the missing tail traveled, the partial file is gone, and the
     // journal is cleared.
     assert!(!part.exists());
-    assert!(!cache.join("journal/game.resume.json").exists());
+    assert!(!cache.join("journal/app.resume.json").exists());
     let _ = full_len;
 
     let (ok, out) = run(

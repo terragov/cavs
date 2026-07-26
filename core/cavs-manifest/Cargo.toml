@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
 keywords = ["cavs", "manifest", "varint", "serialization", "dedup"]
-categories = ["encoding", "game-development"]
+categories = ["encoding", "data-structures"]
 
 [dependencies]
 cavs-hash = { workspace = true }

@@ -18,7 +18,7 @@ use std::time::Instant;
 /// The 16k/32k profiles (1.3.0) use FastCDC normalization level 3 — tight
 /// size distribution around the average — because they are new labels with
 /// no published streams to stay boundary-compatible with; measured on real
-/// games they cut update egress a further ~20% vs level 1 at the same
+/// builds they cut update egress a further ~20% vs level 1 at the same
 /// average. The pre-existing profiles keep level 1 forever: their
 /// boundaries are pinned by every already-published version stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +34,7 @@ pub enum ChunkProfile {
     /// `fastcdc-64k` sizes with normalization level 3 (1.4.0). A new label,
     /// so existing `fastcdc-64k` streams keep their published boundaries;
     /// new streams that want the 64 KiB average get the tighter size
-    /// distribution that measured ~−20% update egress on real games.
+    /// distribution that measured ~−20% update egress on real builds.
     FastCdc64KN3,
     /// `fastcdc-128k` sizes with normalization level 3 (1.4.0).
     FastCdc128KN3,
@@ -144,7 +144,7 @@ pub struct CostWeights {
 }
 
 impl CostWeights {
-    /// Default for games / live updates: update egress dominates.
+    /// Default for frequently-updated payloads: update egress dominates.
     pub fn live_updates() -> Self {
         CostWeights {
             cold_egress: 0.20,
@@ -191,7 +191,7 @@ pub struct ProfileEstimate {
 
 /// Approximate manifest cost per unique chunk, as the binary v2 manifest
 /// (`CAVSMF2`) prices it: the unique hash (32 B) plus varint index
-/// references — measured ~36–37 B/chunk on real games (e.g. 77.7 KiB for
+/// references — measured ~36–37 B/chunk on real builds (e.g. 77.7 KiB for
 /// 2,143 chunks). The old value (150, the JSON-era cost) overweighted the
 /// manifest term ~4×, which silently biased `--profile auto` against the
 /// small-chunk profiles that win update egress.
@@ -421,7 +421,7 @@ mod tests {
         assert!(fixed.reuse_ratio < 0.1, "fixed reuse {}", fixed.reuse_ratio);
     }
 
-    /// Many small scattered edits — the update shape real game packs show
+    /// Many small scattered edits — the update shape real content packs show
     /// (dozens of resources touched per release) — must steer the
     /// live-updates sweep to the small CDC profiles (1.3.0): every edit
     /// invalidates whole chunks, so boundary waste scales with chunk size,
@@ -463,7 +463,7 @@ mod tests {
     /// On a boundary-shifting update they must not score *worse* than their
     /// n1 sibling on update egress — the tight distribution is why they
     /// exist. (They measure real bytes, so this is a lower-bound sanity
-    /// check, not the full ~20% claim, which needs real game data.)
+    /// check, not the full ~20% claim, which needs real build data.)
     #[test]
     fn n3_profiles_do_not_regress_update_egress() {
         let v1 = pseudo_random(8 * 1024 * 1024, 314);

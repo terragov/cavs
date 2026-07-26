@@ -23,7 +23,7 @@ Content-addressable storage for CAVS.
     immutable tree ready for S3/R2/CDN.
 
 This is what turns per-file egress dedup into real **at-rest storage dedup** on
-the origin — measured on a 570 MB real game: 5,775 chunk objects become 6
+the origin — measured on a 570 MB real build: 5,775 chunk objects become 6
 files, an update session's 5,775 chunk reads become 34 physical reads (170×
 fewer) with 1.000 read amplification. Driven by `cavs store …` and
 `cavs-server --store`.

@@ -169,7 +169,7 @@ fn pack_respects_ignore_patterns() {
 
 /// `fetchStatic` is registered, reaches the fetch engine (not the
 /// unknown-operation path), and reconstructs a build from a hand-built
-/// static tree through the JSON envelope — the operation a launcher/game
+/// static tree through the JSON envelope — the operation a launcher or app
 /// embeds to self-update.
 #[test]
 fn fetch_static_op_reconstructs_from_static_tree() {
@@ -207,11 +207,11 @@ fn fetch_static_op_reconstructs_from_static_tree() {
     }
     fs::create_dir_all(tree.join("chunks/packs/00")).unwrap();
     fs::write(tree.join("chunks/packs/00/p.cavspack"), &pack).unwrap();
-    fs::create_dir_all(tree.join("assets/game")).unwrap();
+    fs::create_dir_all(tree.join("assets/app")).unwrap();
     let manifest = json!({
-        "asset": "game", "asset_uuid": "0".repeat(32),
+        "asset": "app", "asset_uuid": "0".repeat(32),
         "tracks": [{ "track_id": 0, "kind": "data", "codec": "raw",
-                     "name": "game.bin", "timescale": 0, "init_chunks": [] }],
+                     "name": "payload.bin", "timescale": 0, "init_chunks": [] }],
         "segments": [{ "segment_id": 0, "track_id": 0, "pts_start": 0,
                        "duration": 0, "random_access": true,
                        "chunks": [ {"hash": to_hex(&hash_chunk(&c0)), "len": c0.len()},
@@ -220,13 +220,13 @@ fn fetch_static_op_reconstructs_from_static_tree() {
         "signature": null, "signer_pubkey": null, "meta": [["payload","raw"]],
     });
     fs::write(
-        tree.join("assets/game/manifest.json"),
+        tree.join("assets/app/manifest.json"),
         serde_json::to_vec(&manifest).unwrap(),
     )
     .unwrap();
     fs::write(
-        tree.join("assets/game/chunk-map.json"),
-        serde_json::to_vec(&json!({"asset":"game","chunks":entries})).unwrap(),
+        tree.join("assets/app/chunk-map.json"),
+        serde_json::to_vec(&json!({"asset":"app","chunks":entries})).unwrap(),
     )
     .unwrap();
 
@@ -235,14 +235,14 @@ fn fetch_static_op_reconstructs_from_static_tree() {
     let data = ok_data(
         "fetchStatic",
         json!({
-            "base": tree, "asset": "game",
+            "base": tree, "asset": "app",
             "outputDir": out, "cacheDir": cache, "connections": 2
         }),
     );
     assert_eq!(data["chunksFetched"].as_u64().unwrap(), 2);
     let mut full = c0.clone();
     full.extend_from_slice(&c1);
-    assert_eq!(fs::read(out.join("game.bin")).unwrap(), full);
+    assert_eq!(fs::read(out.join("payload.bin")).unwrap(), full);
 }
 
 fn assert_files_equal(a: &Path, b: &Path) {

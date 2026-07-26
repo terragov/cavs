@@ -3,7 +3,7 @@
 //!
 //! Scope: release/manifest authenticity and optional locally encrypted
 //! artifacts. This is **not DRM**, not license enforcement and not
-//! anti-tamper — a player with the key has the content, full stop.
+//! anti-tamper — a client with the key has the content, full stop.
 
 use anyhow::{bail, Context, Result};
 use chacha20poly1305::aead::{Aead, KeyInit};

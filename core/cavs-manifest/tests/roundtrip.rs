@@ -26,7 +26,7 @@ fn sample_manifest() -> Manifest {
                 track_id: 1,
                 kind: "data".to_string(),
                 codec: "raw".to_string(),
-                name: "game.pck".to_string(),
+                name: "content.pck".to_string(),
                 timescale: 1000,
                 init_chunks: vec![chunk(0), chunk(1)],
             },
@@ -55,8 +55,8 @@ fn sample_manifest() -> Manifest {
         signature: Some("ab".repeat(64)),
         signer_pubkey: Some("cd".repeat(32)),
         meta: vec![
-            ("sha256:game.pck".to_string(), "ef".repeat(32)),
-            ("bootstrap.name".to_string(), "game.pck".to_string()),
+            ("sha256:content.pck".to_string(), "ef".repeat(32)),
+            ("bootstrap.name".to_string(), "content.pck".to_string()),
         ],
     }
 }

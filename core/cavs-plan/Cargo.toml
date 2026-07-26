@@ -8,7 +8,7 @@ description = "Offline reconstruction plans (.cavsplan): deterministic diff, por
 repository.workspace = true
 homepage.workspace = true
 keywords = ["cavs", "diff", "patch", "delta", "offline"]
-categories = ["compression", "game-development"]
+categories = ["compression", "algorithms"]
 
 [dependencies]
 cavs-hash = { workspace = true }

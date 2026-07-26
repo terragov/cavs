@@ -3,12 +3,12 @@ name = "cavs-fetch"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Embeddable serverless/CDN fetch engine for CAVS: plan, download by hash and reconstruct game builds from a static export, with progress and cancellation."
+description = "Embeddable serverless/CDN fetch engine for CAVS: plan, download by hash and reconstruct large builds from a static export, with progress and cancellation."
 repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
 keywords = ["cavs", "cdn", "fetch", "updater", "dedup"]
-categories = ["game-development"]
+categories = ["network-programming", "caching"]
 
 [dependencies]
 cavs-hash = { workspace = true }

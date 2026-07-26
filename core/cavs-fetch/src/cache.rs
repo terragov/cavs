@@ -1,5 +1,5 @@
 //! Persistent content-addressable chunk cache. Wire-compatible with the
-//! `cavs-client` cache layout (`<root>/<ab>/<hex>`, raw payloads), so a game
+//! `cavs-client` cache layout (`<root>/<ab>/<hex>`, raw payloads), so an application
 //! embedding this library shares a cache with the CLI.
 
 use anyhow::{Context, Result};

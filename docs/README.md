@@ -4,7 +4,7 @@
   global store layout and the content-signature scheme.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how the system fits together: crates,
   the update flow, the integrity chain, storage vs egress dedup.
-- [BENCHMARKS.md](BENCHMARKS.md) — measured results on real games, comparisons
+- [BENCHMARKS.md](BENCHMARKS.md) — measured results on real builds, comparisons
   vs xdelta/bsdiff/rdiff/rsync, parameter sweeps, client cost, and the honest
   negatives.
 - [HYBRID_RECONSTRUCTION.md](HYBRID_RECONSTRUCTION.md) — v0.6.0: reusing the
@@ -72,7 +72,7 @@
 - [CERTIFICATION.md](CERTIFICATION.md) — v1.0.0: `cavs certify` — the
   release-readiness suite: integrity, routes, regressions, Godot,
   workspace, profiles, exit codes and report schemas.
-- [TRY_CAVS.md](TRY_CAVS.md) — v1.0.0: try CAVS on your own game build in
+- [TRY_CAVS.md](TRY_CAVS.md) — v1.0.0: try CAVS on your own build in
   minutes — install, preview, certify, use cases, troubleshooting, FAQ.
 - [ROUTE_SELECTION.md](ROUTE_SELECTION.md) — v1.0.0: the certified route
   selection rules across client states, and how decisions are scored and

@@ -14,7 +14,7 @@ compatibility reader.
   hashes are stored once as raw 32-byte BLAKE3 in a dictionary; every chunk
   reference in the plan is a varint dictionary index instead of a repeated
   64-char hex string. Sections ≥ 32 KiB are zstd-compressed. Measured on real
-  Godot games: **~75–77% smaller** than the JSON v1 equivalent, parse time at
+  real builds: **~75–77% smaller** than the JSON v1 equivalent, parse time at
   parity.
 - **Strict varint codec** — unsigned LEB128 with hard limits; truncated,
   overlong and out-of-range encodings are rejected, so every value has exactly

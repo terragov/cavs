@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build game
+      - name: Build artifact
         run: ./scripts/export_game.sh
 
       - name: Fetch previous release build

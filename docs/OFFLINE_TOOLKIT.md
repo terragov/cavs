@@ -1,7 +1,7 @@
 # Offline Toolkit (v0.7.0, extended in v0.8.0)
 
 CAVS v0.7.0 turns the delivery system into a complete **local toolkit**:
-sign, preview, diff, apply, verify and benchmark game-build updates with
+sign, preview, diff, apply, verify and benchmark build updates with
 no CAVS server involved. The same reconstruction model the online client
 uses (verified copy-ranges + fresh data) drives every offline command.
 v0.8.0 adds the route planner, per-file optimized sidecars, the hot-pair
@@ -57,7 +57,7 @@ magic bytes (zip, gzip, zstd, 7z, xz, bzip2, rar) and quantifies what an
 update through the blob costs.
 
 ```text
-MODIFIED    19.25 MiB  game.pck
+MODIFIED    19.25 MiB  data.pack
 NEW        320.00 KiB  assets/asset_40.dat
 DELETED          0 B   assets/asset_07.dat
 

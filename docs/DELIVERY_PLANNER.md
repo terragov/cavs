@@ -2,7 +2,7 @@
 
 CAVS is not one patch algorithm — it is a set of **routes** over the same
 content-addressed release data. `cavs route-plan` picks the best route
-for one concrete client state instead of forcing every player through
+for one concrete client state instead of forcing every client through
 the same mechanism:
 
 ```text

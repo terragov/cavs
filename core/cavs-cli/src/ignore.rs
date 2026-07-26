@@ -140,10 +140,10 @@ mod tests {
     #[test]
     fn basename_patterns_match_any_depth() {
         let r = rules(&["*.pdb", "*.dSYM"]);
-        assert!(r.matches("game.pdb", false));
-        assert!(r.matches("bin/x64/game.pdb", false));
+        assert!(r.matches("app.pdb", false));
+        assert!(r.matches("bin/x64/app.pdb", false));
         assert!(r.matches("app.dSYM", true));
-        assert!(!r.matches("game.pck", false));
+        assert!(!r.matches("content.pck", false));
         assert!(!r.matches("pdb/readme.txt", false));
     }
 

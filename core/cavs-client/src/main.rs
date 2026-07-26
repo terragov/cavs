@@ -110,7 +110,7 @@ enum Command {
     /// Range requests, verified end to end.
     FetchStatic {
         /// Base URL or local directory of the static export
-        /// (e.g. https://cdn.example.com/game or ./dist).
+        /// (e.g. https://cdn.example.com/dist or ./dist).
         base: String,
         /// Asset name (the `<name>` under `assets/<name>/` in the export).
         asset: String,
@@ -1079,11 +1079,11 @@ fn fetch(
     let mut inline_count = 0u64;
     let mut ref_count = 0u64;
 
-    // v1.4.0: for container payloads (game builds / directory trees) the
+    // v1.4.0: for container payloads (builds / directory trees) the
     // client computes its own missing set from the manifest and downloads
     // those immutable chunks by hash, concurrently, from the edge-cacheable
     // chunk endpoint. This replaces the sequential session/batch round-trips
-    // for the game-asset path; `--connections 0` (or a media payload) keeps
+    // for the generic file path; `--connections 0` (or a media payload) keeps
     // the legacy session/batch stream.
     let use_parallel = connections >= 1 && is_container;
     if use_parallel {
@@ -1725,7 +1725,7 @@ fn reconstruct_with_plans(
         let final_path = output.join(&track.name);
 
         // No-op level 3 (directory mode): an unchanged file — including one
-        // the player modded and the developer did not touch — is left alone.
+        // the user modified and the publisher did not touch — is left alone.
         if dir_mode && !opts.force_reconstruct {
             if let Some(exp) = expected {
                 if hybrid::file_matches_sha256(&final_path, exp) {

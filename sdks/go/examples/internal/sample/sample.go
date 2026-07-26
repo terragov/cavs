@@ -1,4 +1,4 @@
-// Package sample generates a pair of synthetic game builds (v1 and v2) so
+// Package sample generates a pair of synthetic builds (v1 and v2) so
 // the CAVS examples can be run end to end without bringing your own data.
 //
 // v2 is derived from v1 with a realistic mix of changes: some files stay
@@ -31,11 +31,11 @@ func Generate(root string) (v1, v2 Build, err error) {
 
 	// --- v1: the "shipped" build ---------------------------------------
 	files1 := map[string][]byte{
-		"game.exe":            filler("engine-core", 512*1024),
+		"app.exe":            filler("engine-core", 512*1024),
 		"data/level1.pak":     filler("level-one", 2*1024*1024),
 		"data/level2.pak":     filler("level-two", 2*1024*1024),
 		"assets/textures.bin": filler("textures", 3*1024*1024),
-		"README.txt":          []byte("CAVS demo game v1\n"),
+		"README.txt":          []byte("CAVS demo build v1\n"),
 	}
 	if err = writeTree(v1.Dir, files1); err != nil {
 		return v1, v2, err
@@ -43,12 +43,12 @@ func Generate(root string) (v1, v2 Build, err error) {
 
 	// --- v2: the "patch" build ------------------------------------------
 	// level1.pak + textures.bin: byte-for-byte identical (fully reused).
-	// game.exe: a small region changed (mostly reused).
+	// app.exe: a small region changed (mostly reused).
 	// level2.pak: a new tail appended (mostly reused).
 	// level3.pak: brand new.
 	// README.txt: deleted.
 	files2 := map[string][]byte{
-		"game.exe":            patch(files1["game.exe"], 4096, "engine-core v2 hotfix"),
+		"app.exe":            patch(files1["app.exe"], 4096, "engine-core v2 hotfix"),
 		"data/level1.pak":     files1["data/level1.pak"],
 		"data/level2.pak":     append(files1["data/level2.pak"], filler("level-two-dlc", 256*1024)...),
 		"data/level3.pak":     filler("level-three", 2*1024*1024),

@@ -3,18 +3,18 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>CAVS — Content-addressed delivery for game updates</title>
-<meta name="description" content="CAVS reduces game update payloads by reusing content-addressed chunks across versions. Benchmarked on real Godot PCKs: 68–99% smaller updates, 0-byte warm re-fetch, byte-identical reconstruction." />
+<title>CAVS — Content-addressed delivery for large-file updates</title>
+<meta name="description" content="CAVS reduces update payloads for any large file — builds, AI models, datasets, images, media, backups — by reusing content-addressed chunks across versions. Benchmarked on real binary builds: 68–99% smaller updates, 0-byte warm re-fetch, byte-identical reconstruction." />
 <meta name="author" content="Orelvis" />
 <meta name="theme-color" content="#0A0E1A" />
 
 <meta property="og:type" content="website" />
-<meta property="og:title" content="CAVS: Ship smaller game updates" />
-<meta property="og:description" content="Content-addressed delivery for game builds, Godot PCKs and asset bundles. Download only the bytes players are missing." />
+<meta property="og:title" content="CAVS: Ship smaller updates for any large file" />
+<meta property="og:description" content="Content-addressed delivery for builds, AI models, datasets, images, media bundles and binary releases. Download only the bytes a client is missing." />
 <meta property="og:image" content="assets/og-thumb.webp" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="CAVS: Ship smaller game updates" />
-<meta name="twitter:description" content="Download only the bytes your players are missing. Benchmarked on real Godot PCKs." />
+<meta name="twitter:title" content="CAVS: Ship smaller updates for any large file" />
+<meta name="twitter:description" content="Download only the bytes your clients are missing. Benchmarked on real binary builds." />
 
 <link rel="icon" type="image/png" href="assets/logo-transparent-128.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -66,8 +66,8 @@
     <div class="hero-grid">
       <div class="reveal">
         <span class="eyebrow">Content-Addressable Verified Streaming</span>
-        <h1>Ship game updates<br>without <span class="accent">re-downloading</span><br>the whole build.</h1>
-        <p class="hero-sub">CAVS is a content-addressed delivery layer for game builds, Godot PCKs, asset bundles and binary releases. It reconstructs the original file <strong>byte-for-byte</strong> while downloading only the chunks a player is missing.</p>
+        <h1>Ship updates<br>without <span class="accent">re-downloading</span><br>the whole build.</h1>
+        <p class="hero-sub">CAVS is a content-addressed delivery layer for large files — application and machine builds, AI models and checkpoints, datasets, disk and container images, media bundles, backups, asset packs. It reconstructs the original file <strong>byte-for-byte</strong> while downloading only the chunks a client is missing.</p>
         <div class="hero-cta">
           <a class="btn btn-primary" href="https://github.com/orelvis15/cavs" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49l-.01-1.9c-2.78.62-3.37-1.22-3.37-1.22-.46-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.36-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9l-.01 2.82c0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>
@@ -255,8 +255,8 @@ cavs.close();</pre>
   <div class="wrap">
     <div class="section-head">
       <span class="eyebrow">Measured, not projected</span>
-      <h2 class="section-title">Benchmarked on real Godot games.</h2>
-      <p class="section-sub">Captured over real HTTP sessions using open-source Godot projects exported to PCK at two points in their git history. A player who already has the previous version downloads only the missing chunks.</p>
+      <h2 class="section-title">Benchmarked on real binary builds.</h2>
+      <p class="section-sub">Captured over real HTTP sessions. The corpus is open-source Godot projects exported to PCK at two points in their git history — public, reproducible payloads representative of large mixed-content binaries. A client that already has the previous version downloads only the missing chunks.</p>
     </div>
     <div class="cards g2">
       <div class="chart reveal" data-chart='{"title":"Update payload — full download vs CAVS","subtitle":"MiB, lower is better","legend":[{"name":"Full download","cls":"bar-a"},{"name":"CAVS update","cls":"bar-c"}],"groups":[{"label":"godotengine / tps-demo","bars":[{"name":"Full","v":247.60,"cls":"bar-a","text":"247.60 MiB"},{"name":"CAVS","v":1.64,"cls":"bar-c","text":"1.64 MiB  −99.3%"}]},{"label":"GDQuest 3D third-person","bars":[{"name":"Full","v":27.61,"cls":"bar-a","text":"27.61 MiB"},{"name":"CAVS","v":8.70,"cls":"bar-c","text":"8.70 MiB  −68.5%"}]},{"label":"MechanicalFlower / Marble","bars":[{"name":"Full","v":6.55,"cls":"bar-a","text":"6.55 MiB"},{"name":"CAVS","v":0.14,"cls":"bar-c","text":"0.14 MiB  −97.9%"}]}]}'></div>
@@ -372,7 +372,7 @@ cavs.close();</pre>
     <div class="cta-final reveal">
       <span class="eyebrow" style="justify-content:center;">Get started</span>
       <h2>Try CAVS on your own build.</h2>
-      <p>Run CAVS against two versions of your game build: compare update routes, inspect why updates are large, certify byte-identical reconstruction and export a reproducible report — all locally, in minutes.</p>
+      <p>Run CAVS against two versions of your build: compare update routes, inspect why updates are large, certify byte-identical reconstruction and export a reproducible report — all locally, in minutes.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="try.html">Try CAVS →</a>
         <a class="btn btn-ghost" href="https://github.com/orelvis15/cavs" target="_blank" rel="noopener">
@@ -381,7 +381,7 @@ cavs.close();</pre>
         </a>
         <a class="btn btn-ghost" href="products.html#quickstart">Quickstart</a>
       </div>
-      <p class="cta-beta">Have a Godot game with frequent PCK updates? Open an issue or start a discussion — real-world test cases are welcome.</p>
+      <p class="cta-beta">Have a large artifact with frequent updates — a build, a model, a dataset, a PCK? Open an issue or start a discussion — real-world test cases are welcome.</p>
     </div>
   </div>
 </section>
@@ -392,7 +392,7 @@ cavs.close();</pre>
     <div class="foot-grid">
       <div>
         <a href="index.html" class="brand" style="font-size:18px;"><img src="assets/logo-transparent-128.png" alt="" style="width:26px;height:26px;" /> CAVS</a>
-        <p class="foot-note">Content-Addressable Verified Streaming.<br>Ship game updates that weigh what changed.</p>
+        <p class="foot-note">Content-Addressable Verified Streaming.<br>Ship updates that weigh what changed.</p>
       </div>
       <div class="foot-links">
         <a href="https://github.com/orelvis15/cavs" target="_blank" rel="noopener">GitHub</a>

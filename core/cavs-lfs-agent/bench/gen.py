@@ -2,7 +2,7 @@
 """Deterministic versioned datasets for the LFS benchmark harness.
 
 Four scenarios, each a sequence of full version trees under
-<root>/<scenario>/v<N>/…, meant to model how game/binary assets actually
+<root>/<scenario>/v<N>/…, meant to model how large binary assets actually
 evolve:
 
   big-binary    100 MiB incompressible asset; each version edits ~1.25 MiB

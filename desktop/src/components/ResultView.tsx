@@ -278,7 +278,7 @@ else:
       <CodeBlock code={snippet} lang="gdscript" />
       <p className="text-dim" style={{ fontSize: 12, marginTop: 8 }}>
         Start the local server (Local Server section) pointed at this operation's folder, then paste
-        this snippet into your game.
+        this snippet into your application.
       </p>
     </>
   );

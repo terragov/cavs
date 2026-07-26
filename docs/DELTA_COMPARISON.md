@@ -1,6 +1,6 @@
 # CAVS vs delta patching — measured comparison
 
-The established way to ship a game update in fewer bytes is a **pairwise
+The established way to ship an update in fewer bytes is a **pairwise
 delta patch**: diff the old version against the new one and send only the
 difference. Tools like `xdelta3` and `bsdiff` do this at the byte level;
 rsync-style tools do it over fixed blocks (a weak rolling hash finds
@@ -47,7 +47,7 @@ only the dirty regions of dirty blocks, compressed as one stream, beats
 shipping whole content-addressed chunks — on this suite by ~3× for
 scattered small edits. That is inherent, not an implementation gap: chunk
 granularity is what buys CAVS its operational properties. Where the byte
-gap matters most (players updating over slow links, single title, adjacent
+gap matters most (clients updating over slow links, a single artifact, adjacent
 versions), a good delta patcher is genuinely strong.
 
 ## What the per-pair number does not capture
@@ -96,5 +96,5 @@ for payload classes where it might win (rerun on your own builds).
 
 CAVS v0.6.0 combines content-addressed storage with old-version range
 reuse. It does not claim to beat a pairwise patcher at its own single-pair
-game — the numbers above say so explicitly — but it delivers most of the
+specialty — the numbers above say so explicitly — but it delivers most of the
 byte win while keeping the operational properties a per-pair patch cannot.

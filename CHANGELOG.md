@@ -226,7 +226,7 @@ deterministic synthetic suite; every reconstruction is byte-identical.
 - **`cavs-fetch` — an embeddable fetch engine (new crate).** The serverless
   install/update path as a library: content-addressed cache, concurrent range
   fetch, BLAKE3-verified reconstruction, a progress callback, cooperative
-  cancellation and optional Ed25519 signature enforcement. Launchers and games
+  cancellation and optional Ed25519 signature enforcement. Launchers and applications
   link it to self-update in-process. Exposed through a new SDK operation
   **`fetchStatic`** (Go, Kotlin, Node) and, since the C ABI is generic
   JSON-in/out, through `libcavs_sdk` with no ABI change. See
@@ -234,7 +234,7 @@ deterministic synthetic suite; every reconstruction is byte-identical.
 - **Unity and Unreal plugins (reference integrations, _untested_).** A Unity
   UPM package (C# P/Invoke over `libcavs_sdk`) and an Unreal runtime module
   (`UCavsClient`, C++ over `cavs_sdk.h`), both driving `fetchStatic` for
-  in-game self-update with progress and cancellation. They compile against the
+  in-process self-update with progress and cancellation. They compile against the
   C ABI and mirror the shipping SDK bindings but are **not yet validated on a
   device** — clearly marked as such in their READMEs.
 - **Content-addressed parallel chunk download** in `cavs-client`
@@ -436,7 +436,7 @@ Highlights:
 - v1.0.0 public trial guide at `/try`.
 
 CAVS v1.0.0 adds `cavs certify`, a full release-readiness workflow for
-game updates. Certification verifies integrity, byte-identical
+updates. Certification verifies integrity, byte-identical
 reconstruction, route selection, regression safety, Godot PCK
 compatibility, workspace/depot install plans, SteamPipe-style analysis,
 butler comparisons when available, disk I/O estimates and reproducible
@@ -705,7 +705,7 @@ suite — see the tradeoffs table in the results directory.
 ## [0.7.0]
 
 The offline toolkit release. CAVS can now sign, preview, diff, apply, verify
-and benchmark game-build updates **locally, with no CAVS server** — the same
+and benchmark build updates **locally, with no CAVS server** — the same
 verified copy-range + fresh-data reconstruction model the online client uses,
 driven from the command line. This release also adds a fair external **butler
 offline** benchmark harness and a multi-route benchmark suite so CAVS can be
@@ -788,7 +788,7 @@ was verified byte-identical.
 ### Notes
 
 The butler benchmark measures butler's offline/default patch, not the
-backend-optimized player patch (bsdiff + high-quality Brotli). The
+backend-optimized distribution patch (bsdiff + high-quality Brotli). The
 bsdiff/Brotli results are reported separately and labeled as an optimized
 pairwise **proxy**, not official backend numbers. No wire format or routing
 changed for existing paths; the v0.5/v0.6 online numbers are unaffected.
@@ -903,7 +903,7 @@ docs/SIGNATURE_FORMAT.md, docs/DELTA_COMPARISON.md.
 The production-hardening release: correctness under malformed input, recovery
 from interrupted downloads and corrupt caches, structured errors, fuzzing,
 and large-build confidence. Not about reducing bytes — about trust. Wire
-numbers are byte-for-byte identical to 0.4.0 on the real-game suite (tps-demo
+numbers are byte-for-byte identical to 0.4.0 on the real-build suite (tps-demo
 update still 1.64 MiB, warm re-fetch still 0 bytes, everything
 byte-identical), so all 0.3.0/0.4.0 wins carry over unchanged.
 
@@ -911,7 +911,7 @@ Measured highlights: an interrupted 232 MiB bootstrap download (client
 killed with `kill -9` at 57 MiB) resumed with an HTTP Range request and paid
 only the missing ~166 MiB; `cache verify` + `cache repair` on a real
 5,747-chunk cache detected, quarantined and re-fetched exactly the corrupted
-entries; client peak RSS stays ~14 MiB installing a 569 MB game; the 1 GiB
+entries; client peak RSS stays ~14 MiB installing a 569 MB payload; the 1 GiB
 synthetic suite packs in ~7 s per version, and a head-insertion that shifts
 every byte of a 1 GiB build costs 10.9 KiB of update egress (FastCDC
 resynchronization working as designed).

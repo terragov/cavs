@@ -1,13 +1,15 @@
 # Benchmarks
 
 All numbers are **measured**, not projected. Update payloads were captured over
-real HTTP sessions (`cavs-server` + `cavs-client`). Game numbers come from real
+real HTTP sessions (`cavs-server` + `cavs-client`). The corpus is real
 open-source Godot projects exported to PCK at two real points in their git
-history. "Update" means what a player who already has the previous version
+history — public, reproducible payloads representative of large mixed-content
+binaries; CAVS itself is payload-agnostic. "Update" means what a client that
+already has the previous version
 downloads; the baseline is downloading the full new release compressed with
 zstd -3.
 
-## Real games — cold install (dual delivery route)
+## Real builds — cold install (dual delivery route)
 
 First install used to be CAVS's weak spot: chunk-level compression cost +2–4%
 over downloading the whole release as one `.zst`. The **dual route** removes
@@ -16,20 +18,20 @@ the server offers it to cold clients whenever it beats the chunk path, and the
 client **seeds its chunk cache from it** — so the next update is incremental
 with zero extra downloads.
 
-| Game | PCK v1 | Full zstd-3 | Chunk path (old cold) | **Dual route cold** | vs zstd-3 |
+| Build | PCK v1 | Full zstd-3 | Chunk path (old cold) | **Dual route cold** | vs zstd-3 |
 |---|---:|---:|---:|---:|---:|
 | godotengine/tps-demo | 569.15 MiB | 247.62 MiB | 251.91 MiB (+1.7%) | **221.42 MiB** | **−10.6%** |
 | GDQuest 3D third-person | 61.09 MiB | 27.66 MiB | 28.20 MiB (+2.0%) | **24.43 MiB** | **−11.7%** |
 | MechanicalFlower/Marble | 9.59 MiB | 6.55 MiB | 6.68 MiB (+2.0%) | **5.68 MiB** | **−13.2%** |
 | Godot 4.7 export suite | 5.39 MiB | 4.52 MiB | 4.71 MiB (+4.1%) | **4.20 MiB** | **−7.1%** |
 
-The server routed all four games to the bootstrap automatically (its per-
+The server routed all four builds to the bootstrap automatically (its per-
 session estimate vs the 2% threshold), an incompressible payload correctly
 stays on the chunk path, and every reconstruction was byte-identical.
 
-## Real games — update payload
+## Real builds — update payload
 
-| Game | Update | Full (zstd) | CAVS (64 KiB) | Saved |
+| Build | Update | Full (zstd) | CAVS (64 KiB) | Saved |
 |---|---|---:|---:|---:|
 | godotengine/tps-demo (569 MB) | tag 4.5 → master (7 files) | 247.60 MiB | **1.64 MiB** | **−99.3%** |
 | MechanicalFlower/Marble | 1.6.0 → 1.6.1 | 6.55 MiB | 0.14 MiB | **−97.9%** |
@@ -47,9 +49,9 @@ stays on the chunk path, and every reconstruction was byte-identical.
 The runtime manifest used to travel as JSON. The binary v2 format (`CAVSMF2`,
 served by content negotiation, JSON kept for compatibility) stores each unique
 chunk hash once and references it by varint index. Measured on the same real
-games (64 KiB CDC, `cavs manifest bench` + real HTTP sessions):
+builds (64 KiB CDC, `cavs manifest bench` + real HTTP sessions):
 
-| Game | Manifest JSON v1 | Binary v2 | Saved | Parse v1 → v2 |
+| Build | Manifest JSON v1 | Binary v2 | Saved | Parse v1 → v2 |
 |---|---:|---:|---:|---|
 | godotengine/tps-demo | 894.2 KiB | **208.5 KiB** | **−76.7%** | 0.53 → 0.49 ms |
 | GDQuest 3D third-person | 103.1 KiB | **24.8 KiB** | **−75.9%** | 0.062 → 0.058 ms |
@@ -60,14 +62,14 @@ improvement lands where metadata dominates: a warm re-fetch — the "is there an
 update?" check every launcher does — now costs ~75% less wire, and total
 update egress improves up to −26.6% (tps-demo: manifest was a third of the
 update cost). Cold installs, warm re-fetch = 0 payload bytes and byte-identical
-reconstruction were re-verified on all three games.
+reconstruction were re-verified on all three builds.
 
 ## CAVS vs dedicated delta tools
 
 Update payload v1→v2, in MiB. Per-pair deltas win on raw bytes — that is not
 the point; the point is operational cost.
 
-| Game | zstd full | zip full | rsync wire | rdiff | xdelta3 -9 | bsdiff | **CAVS (64k)** |
+| Build | zstd full | zip full | rsync wire | rdiff | xdelta3 -9 | bsdiff | **CAVS (64k)** |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | tps-demo | 247.60 | 247.51 | 462.95 | 0.70 | 0.03 | 0.03 | **1.64** |
 | GDQuest | 27.61 | 27.42 | 54.86 | 7.06 | 3.78 | 3.82 | **8.70** |
@@ -116,11 +118,11 @@ across a version stream, which is what preserves chunk reuse.
 
 The client reconstructs by streaming to disk (batch decoded from the socket →
 disk cache → `.part` → SHA-256 → atomic rename), so RAM is constant regardless
-of game size.
+of payload size.
 
 ## Global store — storage dedup at rest
 
-Ingesting two versions of a real game (Marble 1.6.0 and 1.6.1) into the global
+Ingesting two versions of a real build (Marble 1.6.0 and 1.6.1) into the global
 content-addressable store stored the shared chunks once: **13.80 MiB logical →
 7.04 MiB on disk = ~49% less storage** than keeping each `.cavs` separately,
 while serving each version byte-identically over HTTP. Garbage collection
@@ -134,7 +136,7 @@ server coalesces each batch's pack reads (nearby chunks = one physical read).
 Same two-version stores as above, loose vs packfiles, full
 cold + update + warm session per layout:
 
-| Game | Chunk objects on disk | Physical reads (whole session) | Read amplification |
+| Build | Chunk objects on disk | Physical reads (whole session) | Read amplification |
 |---|---|---|---|
 | MechanicalFlower/Marble | 130 → **4** | 130 → **2** (65×) | 1.000 |
 | GDQuest 3D third-person | 807 → **4** | 805 → **7** (115×) | 1.000 |
@@ -170,12 +172,12 @@ byte-identical). What it adds is resilience, and that was measured too:
 - **Corruption matrix**: `cavs test corrupt` runs ~20 targeted mutations
   (container magic/sections/data/truncation, manifest header/body/
   truncation, overlong varints, bootstrap sidecar, packfile header/data/
-  footer/index, out-of-range reads) against real game containers — every
-  corrupted artifact is rejected cleanly on all three games. The same
+  footer/index, out-of-range reads) against real containers — every
+  corrupted artifact is rejected cleanly on all three builds. The same
   invariants are fuzzed (5 libFuzzer targets) and replayed
   deterministically in CI: full byte-flip sweeps over the pack index and
   container leave **zero** unauthenticated-content survivors.
-- **Client memory** (release build, 569 MB game): peak RSS **14.3 MiB**
+- **Client memory** (release build, 569 MB payload): peak RSS **14.3 MiB**
   for the cold bootstrap install and **6.3 MiB** for the update — still
   ~constant with asset size.
 
@@ -585,7 +587,7 @@ way: `cavs bench gen-stream --out builds --versions 10 --size 32MiB` then
 `cavs bench patch-policy --versions-dir builds --version-glob 'v*'
 --traffic-model adjacent-heavy --hot-pairs latest:3 --patch-storage-budget
 2x-latest-build --out results/patch-policy` (bsdiff/xdelta3 columns appear
-when the tools are installed; missing tools are skipped, never fatal). The real-game harnesses (`cavs-bench`, the
-real-games scripts) and their raw result data live in the full development
+when the tools are installed; missing tools are skipped, never fatal). The real-payload harnesses (`cavs-bench`, the
+corpus scripts) and their raw result data live in the full development
 repository, not in this open-source tree; the measured summaries above are
 what those harnesses produced.

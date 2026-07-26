@@ -152,7 +152,7 @@
           <div><h3>Engine plugins</h3><div class="prod-cmd">Godot · Unity · Unreal</div></div>
           <div class="prod-badges"><span class="badge available">Godot stable</span><span class="badge soon">Unity · Unreal beta</span></div>
         </div>
-        <p>Drop-in content delivery inside your game engine, over the shared Rust core. Godot ships in pure GDScript; Unity (C#) and Unreal (C++) ship as installable beta packages that self-update from a static CDN export.</p>
+        <p>Drop-in content delivery inside a host runtime that mounts content packs — one integration family among several, over the shared Rust core. Godot ships in pure GDScript; Unity (C#) and Unreal (C++) ship as installable beta packages that self-update from a static CDN export.</p>
       </a>
       <a href="#analyzer" class="prod reveal" style="transition-delay:.05s">
         <div class="prod-top">
@@ -264,7 +264,7 @@
     <div class="cmd-list">
       <div class="cmd-row"><code>cavs workspace init · depot add · branch add · build create</code><div class="cmd-desc">Model apps/depots/branches/builds as local metadata; <span class="mono">build create</span> indexes each depot's content for estimates. Depots carry platform / language / optional flags.</div></div>
       <div class="cmd-row"><code>cavs branch promote / promote-preview / rollback</code><div class="cmd-desc">Atomic branch pointer changes with per-depot update cost previews; rollback only to builds the branch has served.</div></div>
-      <div class="cmd-row"><code>cavs depot analyze-sharing · cavs install-plan</code><div class="cmd-desc">Shared bytes across every depot pair, and per-player install/update simulation by platform, language and ownership with cross-depot chunk reuse.</div></div>
+      <div class="cmd-row"><code>cavs depot analyze-sharing · cavs install-plan</code><div class="cmd-desc">Shared bytes across every depot pair, and per-client install/update simulation by platform, language and ownership with cross-depot chunk reuse.</div></div>
       <div class="cmd-row"><code>cavs serve &lt;workspace&gt; --port 8990</code><div class="cmd-desc">Development-only content server: branches, builds, depot files (HTTP Range), chunks by hash, update previews. No auth by design; production stays on <span class="mono">cavs-server</span>.</div></div>
       <div class="cmd-row"><code>cavs build sign / verify / encrypt / decrypt</code><div class="cmd-desc">Release authenticity (Ed25519 detached signatures, tamper ⇒ <span class="mono">CAVS-E-SIGNATURE-INVALID</span>) and optional local at-rest encryption (XChaCha20-Poly1305). Not DRM.</div></div>
     </div>
@@ -307,7 +307,7 @@
       <div class="card reveal" style="transition-delay:.05s">
         <span class="idx">// cavs-client</span>
         <h3>Native streaming client</h3>
-        <p>Reconstructs by streaming to disk with a persistent content-addressable cache — verify / repair / gc, a crash-safe resume journal, and retry with backoff. Peak RAM stays constant regardless of game size.</p>
+        <p>Reconstructs by streaming to disk with a persistent content-addressable cache — verify / repair / gc, a crash-safe resume journal, and retry with backoff. Peak RAM stays constant regardless of payload size.</p>
         <pre class="code" style="margin-top:16px;"><span class="prompt">$</span> cavs-client fetch <span class="str">http://127.0.0.1:8990</span> game_v2 \
     <span class="flag">-o</span> out/game_v2.pck <span class="flag">--cache</span> ./cache \
     <span class="flag">--stats-json</span> stats.json</pre>
@@ -351,7 +351,7 @@
     <div class="section-head">
       <span class="eyebrow">Engine plugins — Godot · Unity · Unreal</span>
       <h2 class="section-title">CAVS delivery,<br>inside your engine.</h2>
-      <p class="section-sub">Each plugin brings deduplicated, verified content delivery to its engine's native containers over the shared Rust core — the player downloads only the chunks that changed and the payload is reconstructed byte-identically (SHA-256 verified). Godot ships as a pure-GDScript client; Unity (C#) and Unreal (C++) ship as installable beta packages that self-update from a static CDN export (currently untested). Each has its own install &amp; usage guide.</p>
+      <p class="section-sub">Each plugin brings deduplicated, verified content delivery to its engine's native containers over the shared Rust core — the client downloads only the chunks that changed and the payload is reconstructed byte-identically (SHA-256 verified). Godot ships as a pure-GDScript client; Unity (C#) and Unreal (C++) ship as installable beta packages that self-update from a static CDN export (currently untested). Each has its own install &amp; usage guide.</p>
     </div>
     <div class="cards g3">
       <a href="plugin-godot.html" class="prod reveal">
@@ -415,7 +415,7 @@
 
     <div class="cards g3" style="margin-top:30px;">
       <div class="card reveal"><span class="idx">// workspace</span><h3>Depots &amp; branches, locally</h3><p><span class="mono">cavs workspace init</span> · <span class="mono">depot add</span> · <span class="mono">branch add</span> · <span class="mono">build create</span> — SteamPipe-like apps/depots/branches/builds as local metadata, with atomic <span class="mono">branch promote / rollback</span> and per-depot promotion previews. No accounts, no platform.</p></div>
-      <div class="card reveal" style="transition-delay:.05s"><span class="idx">// sharing &amp; install plans</span><h3>Content reuse, priced</h3><p><span class="mono">depot analyze-sharing</span> reports shared bytes across depots (measured: windows ↔ linux 98.9%); <span class="mono">cavs install-plan</span> simulates what a player downloads by platform, language and ownership — with cross-depot chunk reuse (a demo owner with the full game: 0 B).</p></div>
+      <div class="card reveal" style="transition-delay:.05s"><span class="idx">// sharing &amp; install plans</span><h3>Content reuse, priced</h3><p><span class="mono">depot analyze-sharing</span> reports shared bytes across depots (measured: windows ↔ linux 98.9%); <span class="mono">cavs install-plan</span> simulates what a client downloads by platform, language and ownership — with cross-depot chunk reuse (a trial-tier owner with the full product installed: 0 B).</p></div>
       <div class="card reveal" style="transition-delay:.1s"><span class="idx">// serve &amp; sign</span><h3>Dev server &amp; authenticity</h3><p><span class="mono">cavs serve</span> exposes the workspace over local HTTP (branches, depot files with Range, chunks by hash, update previews) for plugin testing — dev-only by design. <span class="mono">cavs build sign / verify / encrypt</span> add release authenticity and optional at-rest encryption — not DRM.</p></div>
     </div>
   </div>
@@ -498,7 +498,7 @@
     <div class="foot-grid">
       <div>
         <a href="index.html" class="brand" style="font-size:18px;"><img src="assets/logo-transparent-128.png" alt="" style="width:26px;height:26px;" /> CAVS</a>
-        <p class="foot-note">Content-Addressable Verified Streaming.<br>Ship game updates that weigh what changed.</p>
+        <p class="foot-note">Content-Addressable Verified Streaming.<br>Ship updates that weigh what changed.</p>
       </div>
       <div class="foot-links">
         <a href="https://github.com/orelvis15/cavs" target="_blank" rel="noopener">GitHub</a>

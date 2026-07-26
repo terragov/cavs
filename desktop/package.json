@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.2.0",
   "type": "module",
-  "description": "CAVS Desktop — local build/update lab for game developers.",
+  "description": "CAVS Desktop — local build/update lab for large files.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

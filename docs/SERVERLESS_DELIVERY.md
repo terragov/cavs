@@ -1,6 +1,6 @@
 # Serverless / CDN-only delivery (v1.4.0)
 
-CAVS can deliver game updates with **no running `cavs-server`**. You export a
+CAVS can deliver updates with **no running `cavs-server`**. You export a
 release once as an immutable, self-describing static tree and upload it to any
 object store or static host; clients plan their own fetch and download only
 the chunks they lack, over concurrent HTTP Range requests, verified end to
@@ -36,7 +36,7 @@ Both are plain JSON; nothing about the packfile format leaks to the client.
 ```sh
 # 1. Package the build and ingest into a packfile-layout store
 cavs pack-dir ./Build --profile auto -o build.cavs
-cavs store ./store add game build.cavs --storage packfiles
+cavs store ./store add app build.cavs --storage packfiles
 
 # 2. (later versions) ingest each new build; shared chunks are stored once
 cavs store ./store add game_v2 build_v2.cavs
@@ -53,11 +53,11 @@ CDN: every object can be cached forever (`Cache-Control: immutable`).
 
 ```sh
 # Cold install (downloads the whole build once)
-cavs-client fetch-static https://cdn.example.com/game game \
+cavs-client fetch-static https://cdn.example.com/dist app \
   -o ./install --cache ./cache --connections 8
 
 # Later: update to the new version reusing the cache — only changed chunks
-cavs-client fetch-static https://cdn.example.com/game game \
+cavs-client fetch-static https://cdn.example.com/dist app \
   -o ./install --cache ./cache --connections 8
 ```
 
@@ -75,7 +75,7 @@ reads, for offline mirrors). The client:
 Signed releases are enforced with `--pubkey <hex|file>` exactly as with the
 online client.
 
-## Programmatic / in-game
+## Programmatic / embedded
 
 The same engine is a library (`cavs-fetch`) and an SDK operation
 (`fetchStatic` in Go/Kotlin/Node) and is what the Unity and Unreal plugins

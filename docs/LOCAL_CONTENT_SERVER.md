@@ -2,10 +2,10 @@
 
 SteamPipe documents a local content server for development. The CAVS
 equivalent serves a **workspace** over plain HTTP for local testing —
-game-client integration, the Godot plugin, benchmark scripts.
+client integration, the Godot plugin, benchmark scripts.
 
 ```sh
-cavs serve ./cavs-workspace --app my-game --port 8990
+cavs serve ./cavs-workspace --app my-app --port 8990
 ```
 
 > **Development only.** No auth, no TLS, binds 127.0.0.1, and prints a
@@ -43,13 +43,13 @@ GET /api/preview?app=…&from=build_…&to=build_…               per-depot upd
 ## A typical dev loop
 
 ```sh
-cavs workspace init ws --app my-game
+cavs workspace init ws --app my-app
 cavs depot add base --workspace ws
 cavs branch add beta --workspace ws
 cavs build create --workspace ws --branch beta --depot base=./export
 cavs serve ws --port 8990
 # point the Godot plugin / a test client at http://127.0.0.1:8990
-curl "http://127.0.0.1:8990/api/apps/my-game/branches/beta/current"
+curl "http://127.0.0.1:8990/api/apps/my-app/branches/beta/current"
 ```
 
 Because depot sources are referenced (not copied), re-exporting your

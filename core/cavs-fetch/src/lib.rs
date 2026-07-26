@@ -1,6 +1,6 @@
 //! `cavs-fetch` — an embeddable serverless/CDN fetch engine for CAVS.
 //!
-//! A launcher or game links this library to install and update a build
+//! A launcher, installer or application links this library to install and update a build
 //! **in-process**, straight from a static export produced by
 //! `cavs store export --static-plans` (S3 / R2 / GitHub Pages / nginx / a
 //! local folder) — no `cavs-server` and no shelling out to the CLI. It:
