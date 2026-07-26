@@ -19,7 +19,7 @@
 //!
 //! `previous` pins vN−1→vN; `latest-stable` pins the newest non-prerelease
 //! before the target; `top-installed` uses the installed-version
-//! distribution (a JSON share map) to cover where players actually are.
+//! distribution (a JSON share map) to cover where clients actually are.
 //! Explicit pins (`"v3->v10"`) are honored first.
 
 use anyhow::{bail, Context, Result};
@@ -147,7 +147,7 @@ pub fn plan_pairs(
                         &mut report,
                         prev,
                         "previous",
-                        "the adjacent update most players take first".into(),
+                        "the adjacent update most clients take first".into(),
                     );
                 }
             }

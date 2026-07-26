@@ -1,7 +1,7 @@
 //! Packfile physical storage (`.cavspack` + `.cavsindex`, v0.4.0).
 //!
 //! Object-per-chunk storage is simple but operationally expensive at scale:
-//! a 570 MB game is ~6,000 small files, which means slow directory walks,
+//! a 570 MB build is ~6,000 small files, which means slow directory walks,
 //! poor read locality and one open/read syscall pair per served chunk.
 //! Packfiles store the same stored (possibly zstd) chunk bytes appended
 //! into a few large immutable files, read back by range.

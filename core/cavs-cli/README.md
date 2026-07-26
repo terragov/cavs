@@ -1,6 +1,6 @@
 # cavs — packaging CLI
 
-The `cavs` binary turns files and game builds into deduplicated, verifiable
+The `cavs` binary turns files and large builds into deduplicated, verifiable
 `.cavs` files, inspects and verifies them, reconstructs them byte-for-byte, and
 manages the global content-addressable store.
 
@@ -26,7 +26,7 @@ stays consistent with the chunks clients already have.
 ## Commands
 
 ```sh
-# Package (game assets / arbitrary files)
+# Package (builds, models, datasets / arbitrary files)
 cavs pack --raw build_v42.pck -o v42.cavs
 cavs pack --raw build_v42.pck --profile auto --bootstrap -o v42.cavs  # v2 pipeline
 cavs pack --raw build_v43.pck --profile auto --prev v42.cavs --bootstrap -o v43.cavs
@@ -76,5 +76,5 @@ Run `cavs --help` or `cavs <command> --help` for all options.
 
 ## Requirements
 
-Nothing extra for `--raw` (game asset) mode. `ffmpeg`/`ffplay` on `PATH` only
+Nothing extra for `--raw` (generic file) mode. `ffmpeg`/`ffplay` on `PATH` only
 for the video mode.

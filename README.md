@@ -15,18 +15,19 @@
 
 The core and the SDKs share a version (the SDKs bind the core through a C ABI); the engine plugins and the desktop app version independently. See [RELEASING.md](docs/RELEASING.md) for how the release trains work.
 
-**Ship game updates that weigh what *changed*, not what the game weighs.**
+**Ship updates that weigh what *changed*, not what the payload weighs.**
 
-CAVS is a content-addressable, verified delivery layer for **game content** —
-builds, Godot PCK files, AssetBundles, binary bundles, patches. It sits **on
-top of** your existing formats (it doesn't replace them) and makes every
-client download only the chunks it doesn't already have. It also packages
-video (HLS/CMAF segments), but game asset delivery is the focus — CAVS is not
-a pixel codec.
+CAVS is a content-addressable, verified delivery layer for **large files** —
+application and machine builds, AI models and checkpoints, datasets, disk and
+container images, media bundles, binary archives, backups, patches. It sits
+**on top of** your existing formats (it doesn't replace them) and makes every
+client download only the chunks it doesn't already have. It is a transport and
+dedup layer, not a compressor or a pixel codec: bring the best format for your
+bytes, CAVS moves and stores them efficiently.
 
 - **Content-addressable**: every chunk is identified by its BLAKE3-256 hash;
   the client fetches only what it lacks, with a cache that reuses bytes across
-  versions, DLC and sessions.
+  versions, add-on content and sessions.
 - **Cold installs at less than full-download price (dual route)**: packing
   with `--bootstrap` also emits the whole release as one zstd-19 artifact;
   the server routes cache-less clients to it automatically whenever it beats
@@ -34,20 +35,20 @@ a pixel codec.
   first install is cheap *and* the next update is already incremental.
 - **Adaptive chunking**: `--profile auto` classifies the payload (format
   magic, sampled entropy, compression probe) and measures candidate chunk
-  profiles on the real bytes; `cavs sweep` prints the per-title table.
+  profiles on the real bytes; `cavs sweep` prints the per-payload table.
 - **Verified end-to-end**: per-chunk BLAKE3, global Merkle root, per-file
   SHA-256, and an optional Ed25519 content signature. Reconstruction is
   byte-identical or it fails — never halfway.
 - **Constant memory**: the client reconstructs by streaming to disk
   (`.part` → verify → atomic rename), so RAM stays ~constant regardless of
-  game size.
+  payload size.
 - **Compact manifests (v0.3.0)**: the runtime manifest travels as a compact
   binary format (`CAVSMF2`) — ~75–77% smaller than the JSON equivalent on real
-  games — negotiated transparently, with JSON kept as the default response,
+  builds — negotiated transparently, with JSON kept as the default response,
   debug export and compatibility path for older clients.
 - **Packfile storage (v0.4.0)**: the global store can keep its chunks in a
   few immutable, content-addressed `.cavspack` files instead of one file per
-  chunk — on a 570 MB game, 5,775 objects become 6 files and an update
+  chunk — on a 570 MB build, 5,775 objects become 6 files and an update
   session's reads coalesce 170× with zero read amplification. Exportable as
   a deterministic object tree for S3/R2/CDN.
 - **Production-hardened (v0.5.0)**: interrupted downloads resume with HTTP
@@ -112,9 +113,10 @@ a pixel codec.
   **straight from it with no `cavs-server`** — planning locally and pulling
   only changed chunks over concurrent HTTP Range requests. The same engine
   ships as a library (`cavs-fetch`), an SDK operation (`fetchStatic` in Go /
-  Kotlin / Node) and through the C ABI, so launchers and games self-update
-  **in-process** with progress and cancellation — which is what the new
-  (untested) Unity and Unreal plugins call. Container fetches can also opt
+  Kotlin / Node) and through the C ABI, so installers, launchers and
+  applications self-update **in-process** with progress and cancellation —
+  which is also what the (untested) Unity and Unreal plugins call. Container
+  fetches can also opt
   into a **content-addressed parallel download** (`--connections N`): −26%
   wall time at 4 connections on a localhost origin, more on latency-bound
   links, with byte-identical egress. See
@@ -130,22 +132,24 @@ a pixel codec.
 - **Complementary, not competitive**: use the best codec/compressor for the
   bytes; CAVS deduplicates and transports above them.
 
-## Why it matters (measured on real games)
+## Why it matters (measured on real builds)
 
-Two real versions of open-source Godot games were exported to PCK and served
-over real HTTP sessions. "Update" = what a player who already has the previous
+The test corpus is real-world binary builds: consecutive versions of
+open-source Godot projects exported to PCK — chosen because they are public,
+reproducible and representative of large mixed-content payloads — served over
+real HTTP sessions. "Update" = what a client that already has the previous
 version downloads, versus downloading the full new release compressed with zstd.
 
-| Game | Update | Full download | With CAVS | Saved |
+| Build | Update | Full download | With CAVS | Saved |
 |---|---|---:|---:|---:|
 | godotengine/**tps-demo** (569 MB) | tag 4.5 → master | 247.6 MiB | **1.64 MiB** | **−99.3%** |
 | MechanicalFlower/**Marble** | 1.6.0 → 1.6.1 | 6.55 MiB | 0.14 MiB | **−97.8%** |
 | GDQuest **3D third-person** | HEAD~10 → HEAD (468 files) | 27.61 MiB | 8.7 MiB | **−68.5%** |
 
-And the **first install** (a cache-less player) now costs *less* than
+And the **first install** (a cache-less client) now costs *less* than
 downloading the full compressed release, thanks to the dual delivery route:
 
-| Game | Full download (zstd-3) | CAVS cold install | Delta |
+| Build | Full download (zstd-3) | CAVS cold install | Delta |
 |---|---:|---:|---:|
 | godotengine/**tps-demo** | 247.62 MiB | **221.42 MiB** | **−10.6%** |
 | GDQuest **3D third-person** | 27.66 MiB | **24.43 MiB** | **−11.7%** |
@@ -159,10 +163,11 @@ downloading the full compressed release, thanks to the dual delivery route:
 - **Content shifts don't break updates**: inserting bytes at the head of a
   1 GiB build (every downstream byte moves) costs **10.9 KiB** of update
   egress — FastCDC re-synchronizes (`cavs bench suite`, reproducible).
-- **Server storage dedup**: ingesting two versions of a real game into the
+- **Server storage dedup**: ingesting two versions of a real build into the
   global store stored the shared chunks once — **~49% less disk** than keeping
   each `.cavs` separately.
-- **Client RAM is constant at ~7–14 MiB**, whether the game is 9 MB or 569 MB.
+- **Client RAM is constant at ~7–14 MiB**, whether the payload is 9 MB or
+  569 MB.
 - **Honest negatives**: on a single video, ABR ladders, or already-compressed
   files, savings are ~0 and the packaging overhead is +0.03–2% (the payload
   classifier keeps it at the low end by using large chunks there).
@@ -177,7 +182,7 @@ the paper, [`docs/PAPER.md`](docs/PAPER.md).
 |---|---|
 | [`core/`](core) | The delivery engine (Rust): chunking, hashing, the `.cavs` format, the global content-addressable store, the CVSP protocol, the SteamPipe-style analyzer (`cavs-analyzer`), the local workspace model (`cavs-workspace`), the embeddable serverless fetch engine (`cavs-fetch`), the SDK operation engine (`cavs-sdk-core`) and its C ABI (`cavs-ffi`), and the `cavs` / `cavs-server` / `cavs-client` binaries |
 | [`sdks/`](sdks) | Language SDKs over the shared Rust core via the C ABI: [Go](sdks/go), [Kotlin/JVM](sdks/kotlin) and [Node/TypeScript](sdks/node) |
-| [`game-engine-plugins/`](game-engine-plugins) | Engine integrations over the shared core: [Godot 4](game-engine-plugins/godot-plugin) runtime client in pure GDScript (downloads, verifies and mounts packs with `load_resource_pack()`), plus [Unity](game-engine-plugins/unity-plugin) (C# P/Invoke) and [Unreal](game-engine-plugins/unreal-plugin) (C++) clients over the C ABI — **reference integrations, currently untested** |
+| [`game-engine-plugins/`](game-engine-plugins) | One concrete family of host integrations over the shared core, for runtimes that mount content packs at runtime: [Godot 4](game-engine-plugins/godot-plugin) client in pure GDScript (downloads, verifies and mounts packs with `load_resource_pack()`), plus [Unity](game-engine-plugins/unity-plugin) (C# P/Invoke) and [Unreal](game-engine-plugins/unreal-plugin) (C++) clients over the C ABI — **reference integrations, currently untested**. Any other host embeds the same engine via `cavs-fetch`, an SDK or the C ABI |
 | [`docs/`](docs) | Format specification, architecture, benchmarks, and the technical paper |
 
 ## Getting started
@@ -185,7 +190,7 @@ the paper, [`docs/PAPER.md`](docs/PAPER.md).
 ### Prerequisites
 
 - **Rust** (stable) — install via [rustup](https://rustup.rs). No other
-  dependency is needed for the game-asset (`--raw`) path.
+  dependency is needed for the generic file/build (`--raw`) path.
 - **ffmpeg** on `PATH` — only for the optional video packaging mode.
 - **Godot 4** — only if you use the Godot plugin.
 
@@ -217,26 +222,26 @@ Package two versions of a build, serve them, and watch a client download only
 what changed on the second fetch:
 
 ```sh
-# 1. Package two versions of a game build. --profile auto picks the chunking
+# 1. Package two versions of a build. --profile auto picks the chunking
 #    per payload, --bootstrap makes cold installs cost the full artifact, and
 #    --prev keeps the chunk profile consistent with the published version.
-./target/release/cavs pack --raw game_v1.pck --profile auto --bootstrap -o game_v1.cavs
-./target/release/cavs pack --raw game_v2.pck --profile auto --prev game_v1.cavs --bootstrap -o game_v2.cavs
+./target/release/cavs pack --raw build_v1.bin --profile auto --bootstrap -o build_v1.cavs
+./target/release/cavs pack --raw build_v2.bin --profile auto --prev build_v1.cavs --bootstrap -o build_v2.cavs
 
 # 2. Inspect and verify
-./target/release/cavs info game_v1.cavs
-./target/release/cavs verify game_v1.cavs
+./target/release/cavs info build_v1.cavs
+./target/release/cavs verify build_v1.cavs
 
 # 3. Serve both versions (the .bootstrap.zst sidecars are picked up next to them)
-./target/release/cavs-server game_v1.cavs game_v2.cavs --listen 127.0.0.1:8990
+./target/release/cavs-server build_v1.cavs build_v2.cavs --listen 127.0.0.1:8990
 
 # 4. A cold client installs v1 (routed to the bootstrap, cache auto-seeded),
 #    then updates to v2 — the second fetch downloads only the changed chunks
-./target/release/cavs-client fetch http://127.0.0.1:8990 game_v1 -o out1 --cache ./cache
-./target/release/cavs-client fetch http://127.0.0.1:8990 game_v2 -o out2 --cache ./cache
+./target/release/cavs-client fetch http://127.0.0.1:8990 build_v1 -o out1 --cache ./cache
+./target/release/cavs-client fetch http://127.0.0.1:8990 build_v2 -o out2 --cache ./cache
 
 # Optional: measure which chunk profile is cheapest for YOUR builds
-./target/release/cavs sweep game_v2.pck --prev game_v1.cavs
+./target/release/cavs sweep build_v2.bin --prev build_v1.cavs
 ```
 
 Before you ship an update, certify it (v1.0.0):
@@ -253,19 +258,19 @@ Signing (optional, recommended for distribution):
 
 ```sh
 ./target/release/cavs keygen -o publisher.key                     # → publisher.key(.pub)
-./target/release/cavs pack --raw game_v2.pck --sign-key publisher.key -o game_v2.cavs
-./target/release/cavs-client fetch <url> game_v2 -o out --cache ./cache --pubkey publisher.key.pub
+./target/release/cavs pack --raw build_v2.bin --sign-key publisher.key -o build_v2.cavs
+./target/release/cavs-client fetch <url> build_v2 -o out --cache ./cache --pubkey publisher.key.pub
 ```
 
 ### Global content-addressable store (dedup at rest across all versions)
 
-Store each unique chunk once across every version/title, with reference
+Store each unique chunk once across every version and artifact, with reference
 counting and garbage collection. With `--storage packfiles` (v0.4.0) the
 chunks live in a few immutable packfiles served by coalesced range reads:
 
 ```sh
-./target/release/cavs store ./store add game_v1 game_v1.cavs --storage packfiles
-./target/release/cavs store ./store add game_v2 game_v2.cavs   # shared chunks stored once
+./target/release/cavs store ./store add build_v1 build_v1.cavs --storage packfiles
+./target/release/cavs store ./store add build_v2 build_v2.cavs   # shared chunks stored once
 ./target/release/cavs store ./store stat                        # storage savings + pack occupancy
 ./target/release/cavs store ./store verify                      # re-hash chunks, check packs
 ./target/release/cavs store ./store gc --grace 0                # reclaim unreferenced chunks/packs
@@ -273,7 +278,7 @@ chunks live in a few immutable packfiles served by coalesced range reads:
 ./target/release/cavs-server --store ./store --listen 127.0.0.1:8990
 ```
 
-### Serverless delivery — update players with no server (v1.4.0)
+### Serverless delivery — update clients with no server (v1.4.0)
 
 Export the store as a self-describing static tree and update clients straight
 from it — S3, R2, GitHub Pages, nginx or a local folder — with no
@@ -286,12 +291,12 @@ from it — S3, R2, GitHub Pages, nginx or a local folder — with no
 
 # Install / update a client from the tree; only changed chunks travel,
 # downloaded concurrently and verified end to end.
-./target/release/cavs-client fetch-static https://cdn.example.com/game game \
+./target/release/cavs-client fetch-static https://cdn.example.com/dist build_v2 \
   -o ./install --cache ./cache --connections 8
 ```
 
 The same engine is a library (`cavs-fetch`), an SDK op (`fetchStatic`) and a C
-ABI call, so a launcher or game self-updates in-process — see
+ABI call, so an installer, launcher or application self-updates in-process — see
 [docs/SERVERLESS_DELIVERY.md](docs/SERVERLESS_DELIVERY.md) and
 [docs/EMBEDDABLE_FETCH.md](docs/EMBEDDABLE_FETCH.md).
 
@@ -308,14 +313,14 @@ diagnoses a deployment:
 # Cache maintenance: re-hash everything (corrupt entries -> quarantine),
 # re-fetch an asset's missing/corrupt chunks, evict LRU to a size budget
 ./target/release/cavs-client cache verify --cache ./cache
-./target/release/cavs-client cache repair http://127.0.0.1:8990 game_v2 --cache ./cache
+./target/release/cavs-client cache repair http://127.0.0.1:8990 build_v2 --cache ./cache
 ./target/release/cavs-client cache gc --cache ./cache --max-size 10GiB
 
 # Diagnose: container integrity, manifest, bootstrap sidecar, store, cache
-./target/release/cavs doctor game_v2.cavs --store ./store --cache ./cache
+./target/release/cavs doctor build_v2.cavs --store ./store --cache ./cache
 
 # Prove every decoder rejects corruption cleanly (20-row mutation matrix)
-./target/release/cavs test corrupt game_v2.cavs --out corrupt-report.json
+./target/release/cavs test corrupt build_v2.cavs --out corrupt-report.json
 
 # Reproducible large-build benchmarks (deterministic synthetic datasets)
 ./target/release/cavs bench gen --out ./ds --size 1GiB
@@ -336,20 +341,20 @@ update vs v0.5's cold path, −99.98 % on a shifted build — see
 
 ```sh
 # Update reusing the old install directly (works with a cold cache)
-./target/release/cavs-client fetch http://127.0.0.1:8990 game_v2 \
-  -o ./install --cache ./cache --previous-artifact ./install/game_v1.pck
+./target/release/cavs-client fetch http://127.0.0.1:8990 build_v2 \
+  -o ./install --cache ./cache --previous-artifact ./install/build_v1.bin
 
 # Compact old-version signatures (~0.07% of the source)
-./target/release/cavs signature export game_v1.cavs -o game_v1.cavssig
-./target/release/cavs pack --raw game_v2.pck --against-signature game_v1.cavssig -o v2.cavs
+./target/release/cavs signature export build_v1.cavs -o build_v1.cavssig
+./target/release/cavs pack --raw build_v2.bin --against-signature build_v1.cavssig -o v2.cavs
 
 # Directory/container mode (preview): per-file dedup, staged installs,
 # unchanged (modded) files untouched
 ./target/release/cavs pack-dir ./Build_v2 -o build_v2.cavs
-./target/release/cavs-client fetch http://127.0.0.1:8990 build_v2 -o ./InstalledGame --cache ./cache
+./target/release/cavs-client fetch http://127.0.0.1:8990 build_v2 -o ./InstalledBuild --cache ./cache
 
 # Compare against a block-based delta patcher (and xdelta3/bsdiff if present)
-./target/release/cavs bench delta --old game_v1.pck --new game_v2.pck --out results/delta
+./target/release/cavs bench delta --old build_v1.bin --new build_v2.bin --out results/delta
 ```
 
 Already-current outputs are detected and skipped (no-op: 0 bytes), every
@@ -373,10 +378,10 @@ client, so a `.cavsplan` update is byte-identical or it fails:
 ./target/release/cavs diff-plan ./Build_v1 ./Build_v2 -o update.cavsplan --report plan.md
 
 # 4. Apply it in place — staged, journaled, verified, mod-friendly
-./target/release/cavs apply --old ./InstalledGame --plan update.cavsplan --inplace --verify
+./target/release/cavs apply --old ./InstalledBuild --plan update.cavsplan --inplace --verify
 
 # 5. Check any install against a known-good signature (mods tolerated)
-./target/release/cavs verify-install ./InstalledGame --signature build_v2.cavssig --allow-extra-files
+./target/release/cavs verify-install ./InstalledBuild --signature build_v2.cavssig --allow-extra-files
 
 # Identify/inspect any CAVS file
 ./target/release/cavs file update.cavsplan
@@ -424,7 +429,7 @@ pairwise **proxy**. Full tables and framing:
 ./target/release/cavs patch-policy --versions v1,v2,...,v10 --distribution shares.json
 
 # Pick the route for one client state under a device profile
-./target/release/cavs route-plan --installed ./InstalledGame --new ./Build_v2 \
+./target/release/cavs route-plan --installed ./InstalledBuild --new ./Build_v2 \
   --patch v1_to_v2.cavspatch --profile low-memory
 
 # The proof report: every CAVS route vs the complete butler pipeline
@@ -465,7 +470,7 @@ byte-level delta automatically (2.53 MiB where block routes paid
   --client-state has-previous-install,slow-hdd --policy hdd_friendly
 
 # The workspace: SteamPipe-like depots/branches/builds as local metadata
-./target/release/cavs workspace init ./ws --app my-game
+./target/release/cavs workspace init ./ws --app my-app
 ./target/release/cavs depot add windows --workspace ./ws --platform windows
 ./target/release/cavs branch add beta --workspace ./ws
 ./target/release/cavs build create --workspace ./ws --branch beta \
@@ -493,7 +498,7 @@ there is deliberately no separate `steam-analyzer` product
 Full story: [docs/STEAMPIPE_COMPARISON.md](docs/STEAMPIPE_COMPARISON.md),
 [docs/BUILD_UPDATE_ANALYZER.md](docs/BUILD_UPDATE_ANALYZER.md).
 
-See [`game-engine-plugins/godot-plugin/README.md`](game-engine-plugins/godot-plugin/README.md) for game integration.
+See [`game-engine-plugins/godot-plugin/README.md`](game-engine-plugins/godot-plugin/README.md) for an example of embedding the client in a host runtime.
 
 ### Patch policy benchmark (v1.1.0)
 

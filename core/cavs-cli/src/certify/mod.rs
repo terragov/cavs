@@ -473,9 +473,8 @@ pub struct Summary {
     pub note: &'static str,
 }
 
-pub const SUMMARY_NOTE: &str =
-    "CAVS certifies game updates locally before release. CAVS is not a CDN, \
-     marketplace, SaaS, DRM system or game store; SteamPipe-style figures are \
+pub const SUMMARY_NOTE: &str = "CAVS certifies updates locally before release. CAVS is not a CDN, \
+     marketplace, SaaS, DRM system or storefront; SteamPipe-style figures are \
      estimates from a public model, never Valve's implementation.";
 
 pub fn summary_markdown(s: &Summary) -> String {

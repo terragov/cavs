@@ -1,6 +1,6 @@
 //! Reconstruct output files from a complete cache, streaming to disk with a
 //! `.part` → verify → atomic rename so a crash never promotes a torn file.
-//! Container payloads only (game builds / directory trees); media tracks are
+//! Container payloads only (builds / directory trees); media tracks are
 //! served by the full `cavs-client`, not this embeddable engine.
 
 use crate::cache::ChunkCache;

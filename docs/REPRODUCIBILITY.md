@@ -45,7 +45,7 @@ repro/
   bundles.
 - **No private inputs by default**: the bundle carries hashes and file
   lists, never the input builds. `--include-inputs` embeds them — use it
-  only for synthetic or shareable test data, never a private game build.
+  only for synthetic or shareable test data, never a private build.
 - **Self-describing**: `commands.sh` + `environment.json` +
   `tool-versions.json` are everything needed to re-run the
   certification; `outputs/report-hashes.json` lets a verifier confirm

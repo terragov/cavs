@@ -8,7 +8,7 @@ and organizing releases. No accounts, no uploads, no platform.
 ## Quick start
 
 ```sh
-cavs workspace init ./cavs-workspace --app my-game
+cavs workspace init ./cavs-workspace --app my-app
 
 cavs depot add base
 cavs depot add windows --platform windows
@@ -35,7 +35,7 @@ Every command takes `--workspace` (default `./cavs-workspace`) and
 ```text
 cavs-workspace/
   cavs.toml                      # workspace: default app
-  apps/my-game/
+  apps/my-app/
     app.toml                     # depots + branches (current builds)
     builds/build_1001/
       build.toml                 # label, created_at, depot sources
@@ -53,8 +53,8 @@ sources. Metadata writes are atomic (temp file + rename).
 
 | Flag | Effect on install plans |
 |---|---|
-| `--platform windows\|linux\|macos` | delivered only to matching `--platform` players |
-| `--language es` | delivered only to matching `--language` players |
+| `--platform windows\|linux\|macos` | delivered only to matching `--platform` clients |
+| `--language es` | delivered only to matching `--language` clients |
 | `--optional` | delivered only when listed in `--owned` |
 
 ## Branches: promote, rollback, preview
@@ -98,7 +98,7 @@ Filters the target build's depots by platform/language/ownership, then
 prices each depot: `no-op` (already up to date), `update` (new chunks
 vs the installed build) or `install` — with **cross-depot reuse**:
 chunks fetched for one depot (or already installed) are free for the
-next. A demo owner with the full game installed downloads 0 B.
+next. A trial-tier owner with the full product installed downloads 0 B.
 Route suggestions per depot follow the size ratio (`.cavsplan` for
 small updates, chunks/bootstrap otherwise). `--json` for machines.
 

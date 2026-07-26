@@ -1,4 +1,4 @@
-# Try CAVS on your game build
+# Try CAVS on your own build
 
 Run CAVS locally against two builds, compare update routes, inspect why
 updates are large, and generate a release certification report. No CDN,
@@ -8,11 +8,11 @@ no account, no hosted anything — everything below runs on your machine.
 
 Use this guide if you have:
 
-- two versions of a game build;
-- a Godot PCK;
-- a folder-based game export;
-- DLC or language packs;
-- a custom launcher workflow;
+- two versions of any large build or artifact;
+- a packed container (archive, image, model checkpoint, Godot PCK, …);
+- a folder-based release or export;
+- add-on, DLC or language packs;
+- a custom installer or launcher workflow;
 - large updates you want to understand before release.
 
 ## Install CAVS
@@ -104,18 +104,18 @@ compression, …).
 
 ## Use case: empty cache but previous install exists
 
-Common when migrating existing players to CAVS: the player has
-`game_v1.pck` but no CAVS cache yet. Hybrid reconstruction reuses
+Common when migrating an existing install base to CAVS: the client has
+`build_v1.bin` but no CAVS cache yet. Hybrid reconstruction reuses
 verified ranges straight from the installed artifact:
 
 ```bash
-cavs-client fetch http://127.0.0.1:8990 game_v2 \
-  --previous-artifact ./game_v1.pck \
+cavs-client fetch http://127.0.0.1:8990 build_v2 \
+  --previous-artifact ./build_v1.bin \
   --cache ./cache \
-  -o game_v2.pck
+  -o build_v2.bin
 ```
 
-## Use case: folder-based game builds
+## Use case: folder-based builds
 
 ```bash
 cavs pack-dir ./Build_v1 --profile auto -o build_v1.cavs
@@ -132,7 +132,7 @@ cavs verify-install ./Build_v2_out --signature build_v2.cavssig
 ## Use case: depots, DLC and language packs
 
 ```bash
-cavs workspace init ./cavs-workspace --app my-game
+cavs workspace init ./cavs-workspace --app my-app
 cavs depot add base    --workspace ./cavs-workspace
 cavs depot add windows --platform windows --workspace ./cavs-workspace
 cavs depot add lang-es --language es --optional --workspace ./cavs-workspace
@@ -143,7 +143,7 @@ cavs build create --workspace ./cavs-workspace --branch beta \
   --depot base=./Build/Base --depot windows=./Build/Windows \
   --depot lang-es=./Build/Lang/es --label build_1001
 
-cavs install-plan --workspace ./cavs-workspace --app my-game \
+cavs install-plan --workspace ./cavs-workspace --app my-app \
   --branch beta --platform windows --language es \
   --owned base,lang-es --from build_1001 --to build_1002
 ```
@@ -154,7 +154,7 @@ the whole structure with `cavs certify workspace`.
 ## Use case: local testing server
 
 ```bash
-cavs serve ./cavs-workspace --app my-game --branch beta --port 8990
+cavs serve ./cavs-workspace --app my-app --branch beta --port 8990
 ```
 
 Development/testing only (plain HTTP, localhost). It serves manifests,
@@ -171,7 +171,7 @@ cavs certify export-repro \
 
 The bundle includes commands, tool versions, environment metadata,
 configs, report JSON + Markdown, and hashes. By default CAVS does
-**not** include private game files; `--include-inputs` is for synthetic
+**not** include private build files; `--include-inputs` is for synthetic
 or shareable test data only. See [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 ## Troubleshooting
@@ -204,7 +204,7 @@ a public model based on documentation, never Valve's implementation.
 **Does CAVS replace butler?** No. It benchmarks against butler offline
 when installed; it does not replace itch.io's pipeline.
 
-**Does the Godot plugin change my game format?** No — the PCK is
+**Does the Godot plugin change my PCK format?** No — the PCK is
 reconstructed byte-for-byte and mounted normally.
 
 **Is signing/encryption DRM?** No — they exist for integrity and

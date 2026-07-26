@@ -1,7 +1,7 @@
 {
   "name": "@orelvis15/cavs-sdk",
   "version": "1.7.0",
-  "description": "Node.js SDK for CAVS — analyze, preview, pack, plan, apply, verify and benchmark game updates using the native Rust core.",
+  "description": "Node.js SDK for CAVS — analyze, preview, pack, plan, apply, verify and benchmark large-file updates using the native Rust core.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

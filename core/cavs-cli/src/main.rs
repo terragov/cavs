@@ -63,12 +63,12 @@ use std::path::PathBuf;
     name = "cavs",
     version,
     about = "CAVS — content-addressable, deduplicated packaging",
-    long_about = "CAVS packages files, game builds or video into .cavs: deduplicated \
+    long_about = "CAVS packages files, large builds or video into .cavs: deduplicated \
                   FastCDC chunks, zstd-compressed and verifiable (BLAKE3 + Merkle + \
                   optional Ed25519 signature). Served by cavs-server, a client with a \
                   cache downloads only the bytes it doesn't already have.",
     after_help = "EXAMPLES:\n  \
-        cavs pack --raw build_v42.pck -o v42.cavs           # a game release\n  \
+        cavs pack --raw build_v42.bin -o v42.cavs           # a release artifact\n  \
         cavs pack --raw --sign-key pub.key data/* -o r.cavs # signed\n  \
         cavs pack movie.mp4 -o movie.cavs                   # video (segmented via ffmpeg)\n  \
         cavs info v42.cavs                                  # structure and dedupe\n  \
@@ -694,7 +694,7 @@ enum Command {
         #[command(subcommand)]
         action: BuildAction,
     },
-    /// Simulate what a player downloads for an install or update, by
+    /// Simulate what a client downloads for an install or update, by
     /// platform, language and ownership (v0.9.0).
     InstallPlan {
         /// Workspace directory.
@@ -819,7 +819,7 @@ enum WorkspaceAction {
     Init {
         /// Workspace directory (created).
         path: PathBuf,
-        /// App id, e.g. my-game.
+        /// App id, e.g. my-app.
         #[arg(long)]
         app: String,
     },

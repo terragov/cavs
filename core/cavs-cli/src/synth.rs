@@ -12,7 +12,7 @@
 //! - `v2-reordered` same blocks, halves swapped in 8 MiB groups
 //!
 //! Content is a 50/50 mix of compressible (patterned) and incompressible
-//! (PRNG) 64 KiB blocks, which is roughly how real game builds behave.
+//! (PRNG) 64 KiB blocks, which is roughly how real builds behave.
 //! Everything streams block-by-block, so datasets larger than RAM are fine
 //! to *generate*; `suite` packs each version (FastCDC 64 KiB + zstd 3),
 //! measures pack time, container/manifest sizes, dedup and update egress,
@@ -386,7 +386,7 @@ pub fn generate_dir(out: &Path, size: &str, seed: u64) -> Result<()> {
             Ok(())
         };
 
-    // game.pck: v2 changes ~3% of blocks.
+    // content.pck: v2 changes ~3% of blocks.
     let changed: HashSet<u64> = {
         let mut rng = Rng::new(seed.wrapping_mul(97).wrapping_add(3));
         let target = (pck_blocks * 3 / 100).max(1);
@@ -396,21 +396,21 @@ pub fn generate_dir(out: &Path, size: &str, seed: u64) -> Result<()> {
         }
         set
     };
-    write_blocks(&v1.join("game.pck"), pck_blocks, &|_| 0, 1)?;
+    write_blocks(&v1.join("content.pck"), pck_blocks, &|_| 0, 1)?;
     write_blocks(
-        &v2.join("game.pck"),
+        &v2.join("content.pck"),
         pck_blocks,
         &|i| if changed.contains(&i) { 1 } else { 0 },
         1,
     )?;
 
     // Engine binary: identical in both versions (must no-op), executable.
-    write_blocks(&v1.join("bin/game"), bin_blocks, &|_| 0, 2)?;
-    write_blocks(&v2.join("bin/game"), bin_blocks, &|_| 0, 2)?;
+    write_blocks(&v1.join("bin/app"), bin_blocks, &|_| 0, 2)?;
+    write_blocks(&v2.join("bin/app"), bin_blocks, &|_| 0, 2)?;
     #[cfg(unix)]
     for d in [&v1, &v2] {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(d.join("bin/game"), std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(d.join("bin/app"), std::fs::Permissions::from_mode(0o755))?;
     }
 
     // Textual catalog: small edit in v2.

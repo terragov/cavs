@@ -71,7 +71,7 @@ content ([results/v0.9.0/depot-sharing/](results/v0.9.0/depot-sharing/)):
 | windows | linux | 48.83 MiB | 98.9% |
 | windows | demo | 5.76 MiB | 11.7% |
 
-Install plans by ownership: a windows-only player downloads 49.11 MiB;
+Install plans by ownership: a windows-only client downloads 49.11 MiB;
 a demo owner who already has the full build downloads **0 B** (every
 chunk already local).
 

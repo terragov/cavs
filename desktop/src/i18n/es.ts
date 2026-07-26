@@ -3,7 +3,7 @@ import type { Dict } from "./en";
 export const es: Dict = {
   app: {
     name: "CAVS Desktop",
-    tagline: "Laboratorio local de builds/actualizaciones para desarrolladores de juegos",
+    tagline: "Laboratorio local de builds/actualizaciones para archivos grandes",
   },
   common: {
     create: "Crear",

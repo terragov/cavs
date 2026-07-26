@@ -1,6 +1,6 @@
 # Optimized pairwise sidecars (`.cavspatch` v2, v0.8.0)
 
-For a *hot* old→new pair — "previous release → latest" for most players —
+For a *hot* old→new pair — "previous release → latest" for most clients —
 a dedicated patch can beat chunked delivery on wire bytes. Sidecars make
 that an **optional route inside CAVS** without changing the architecture:
 content stays content-addressed; a sidecar is just a cheaper edge for one
@@ -102,7 +102,7 @@ cavs patch-policy --versions v1,v2,...,v10 \
 ```
 
 `previous` covers the adjacent update; `latest-stable` covers the slow
-channel; `top-installed` reads a version→share map so the biggest player
+channel; `top-installed` reads a version→share map so the biggest installed
 populations get a dedicated patch. Explicit pins (`"v3->v10"`) are
 honored first. Every version pair the policy does *not* cover is still
 served by chunks/hybrid/plan — no missing routes.

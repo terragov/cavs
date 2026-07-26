@@ -36,7 +36,7 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "Local build/update lab for game developers",
+    "shortDescription": "local build/update lab for large files",
     "longDescription": "The official desktop UI for CAVS: analyze builds, generate updates, test them locally, and copy engine integration snippets."
   },
   "plugins": {}

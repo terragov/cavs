@@ -421,7 +421,7 @@ pub fn install_plan(args: &InstallPlanArgs) -> Result<()> {
         None => None,
     };
 
-    // Which depots does this player receive?
+    // Which depots does this client receive?
     let wanted: Vec<&cavs_workspace::DepotBuild> = to
         .depots
         .iter()
@@ -430,7 +430,7 @@ pub fn install_plan(args: &InstallPlanArgs) -> Result<()> {
                 return false;
             };
             // A depot that declares a platform/language is only delivered
-            // when the player's state matches it.
+            // when the client state matches it.
             let platform_ok = match (meta.platform, platform) {
                 (None, _) => true,
                 (Some(a), Some(b)) => a == b,
@@ -457,7 +457,7 @@ pub fn install_plan(args: &InstallPlanArgs) -> Result<()> {
         );
     }
 
-    // Indices the player already holds (from the installed build).
+    // Indices the client already holds (from the installed build).
     let mut held: Vec<DepotIndex> = Vec::new();
     if let Some(from) = &from {
         for db in &from.depots {
@@ -538,7 +538,7 @@ pub fn install_plan(args: &InstallPlanArgs) -> Result<()> {
 fn print_install_plan(p: &InstallPlan) {
     println!("install-plan: app '{}' → {}", p.app, p.to_build);
     println!(
-        "player  : platform {}, language {}, owned [{}], installed {}",
+        "client  : platform {}, language {}, owned [{}], installed {}",
         p.platform.as_deref().unwrap_or("any"),
         p.language.as_deref().unwrap_or("any"),
         p.owned.join(", "),

@@ -51,7 +51,7 @@ git clone \
   -c lfs.standalonetransferagent=cavs \
   -c lfs.customtransfer.cavs.path=cavs-lfs-agent \
   -c lfs.customtransfer.cavs.concurrent=false \
-  /srv/game.git
+  /srv/assets.git
 ```
 
 (or `GIT_LFS_SKIP_SMUDGE=1 git clone …`, configure, then `git lfs pull`).

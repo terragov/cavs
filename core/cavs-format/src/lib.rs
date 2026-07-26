@@ -1,8 +1,9 @@
 //! CAVS-1 binary container format: types, writer and reader.
 //!
 //! CAVS-1 (Content-Addressable Versioned Streaming, v1) is a packaging layer
-//! for game content (builds, packs, bundles, patches) — and, secondarily,
-//! video. It stores deduplicated, content-hashed chunks plus the tables needed
+//! for large files (builds, models, datasets, images, packs, bundles, patches)
+//! — and, secondarily, video. It stores deduplicated, content-hashed chunks
+//! plus the tables needed
 //! to reconstruct the original files byte-for-byte (raw assets, or fMP4/CMAF
 //! segments and playlists when packaging video).
 //!

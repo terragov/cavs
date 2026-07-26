@@ -155,7 +155,7 @@ pub fn detect_file(f: &FileSignals, t: &Thresholds) -> Vec<Finding> {
                 why: format!(
                     "{} is {}. Fixed-chunk updaters rebuild a touched pack alongside the \
                      old copy, so even a tiny change re-reads and re-writes the whole \
-                     file on the player's disk.",
+                     file on the client's disk.",
                     f.path,
                     human_bytes(f.new_size)
                 ),

@@ -1,7 +1,10 @@
 # Godot plugin guide (v1.0.0)
 
-The CAVS Godot plugin delivers deduplicated updates to Godot 4 games
-**without changing the engine or the PCK format**. It is 100% GDScript
+The CAVS Godot plugin is one of several host integrations of the same core —
+it delivers deduplicated updates to Godot 4 projects **without changing the
+engine or the PCK format**. Any other host (a desktop app, an installer, a
+service) embeds the same engine through `cavs-fetch`, an SDK or the C ABI; see
+[EMBEDDABLE_FETCH.md](EMBEDDABLE_FETCH.md). It is 100% GDScript
 (`addons/cavs/cavs_client.gd`, `class_name CavsClient`) — no
 GDExtension, no native binaries — so it runs on every platform Godot
 exports to. Full install and end-to-end instructions live in

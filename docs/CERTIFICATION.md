@@ -15,8 +15,8 @@ whether the update is ready to publish:
 cavs certify --old ./Build_v1 --new ./Build_v2 --profile release --out ./certification
 ```
 
-CAVS certifies game updates **locally, before release**. It is not a
-CDN, marketplace, SaaS, DRM system or game store, and its
+CAVS certifies updates **locally, before release**. It is not a
+CDN, marketplace, SaaS, DRM system or distribution storefront, and its
 SteamPipe-style figures are estimates from a public model — never
 Valve's implementation.
 
@@ -49,7 +49,7 @@ including per-depot integrity and install plans:
 ```bash
 cavs certify \
   --workspace ./cavs-workspace \
-  --app my-game \
+  --app my-app \
   --from build_1001 \
   --to build_1002 \
   --out ./certification/build_1001_to_1002

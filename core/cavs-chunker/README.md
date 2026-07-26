@@ -15,7 +15,7 @@ Chunking strategies: how content is split into chunks before hashing.
   what the small `fastcdc-16k`/`fastcdc-32k` profiles use.
 
 Presets: `media_default()` (256 KiB fixed), `asset_default()` (FastCDC
-16/64/256 KiB — the game-asset default), `screen_default()` (aggressive CDC).
+16/64/256 KiB — the large-binary default), `screen_default()` (aggressive CDC).
 
 ## Use
 

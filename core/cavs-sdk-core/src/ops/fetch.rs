@@ -1,6 +1,6 @@
 //! `fetchStatic` — install or update a build straight from a static export
 //! (`cavs store export --static-plans`) with no cavs-server, in-process. This
-//! is the operation a launcher/game embeds (via the SDKs or the C ABI, which
+//! is the operation a launcher, installer or application embeds (via the SDKs or the C ABI, which
 //! is what the Unity and Unreal plugins call) to self-update: it plans the
 //! missing set against a persistent cache and downloads only what changed,
 //! concurrently, reporting progress and honouring cancellation.

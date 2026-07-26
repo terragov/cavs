@@ -3,7 +3,7 @@
 export const en = {
   app: {
     name: "CAVS Desktop",
-    tagline: "Local build/update lab for game developers",
+    tagline: "local build/update lab for large files",
   },
   common: {
     create: "Create",

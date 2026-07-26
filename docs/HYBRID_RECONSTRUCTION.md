@@ -81,7 +81,7 @@ Enabled by default (`--force-reconstruct` disables):
   version → installed with a local verified copy
   (`delivery_mode: "previous-copy"`, zero network).
 - **Level 3 — per-file no-op (directory mode):** unchanged files are not
-  rewritten; files the player modded and the developer did not touch are
+  rewritten; files the user modified and the publisher did not touch are
   left alone.
 
 ## Directory / container mode (preview)

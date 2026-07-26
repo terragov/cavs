@@ -4,7 +4,7 @@
 //! - `Fixed`: fixed-size chunks aligned to the payload start. Used for
 //!   already-packaged media segments (fMP4/CMAF), where stable, CDN-friendly
 //!   boundaries matter more than shift-resistant dedup.
-//! - `Cdc`: FastCDC content-defined chunking. Used for raw assets, game
+//! - `Cdc`: FastCDC content-defined chunking. Used for raw assets, large
 //!   bundles and screen-content payloads where redundancy crosses files and
 //!   versions with insertions/shifts.
 
@@ -12,7 +12,7 @@ use std::ops::Range;
 
 /// FastCDC chunk-size normalization level (see the FastCDC 2020 paper).
 /// Higher levels concentrate chunk sizes around `avg` — level 3 measured
-/// ~20% smaller update payloads on real games for the small profiles —
+/// ~20% smaller update payloads on real builds for the small profiles —
 /// but different levels produce different boundaries, so the level is part
 /// of a profile's identity and must never change for published content.
 /// `NORM_DEFAULT` (level 1) is what every profile before the 16k/32k ones
@@ -46,7 +46,7 @@ impl ChunkMode {
     }
 
     /// Default for generic binary assets: FastCDC 16 KiB / 64 KiB / 256 KiB.
-    /// The 64 KiB average won the real-games benchmark: 3× smaller update
+    /// The 64 KiB average won the real-corpus benchmark: 3× smaller update
     /// payloads than 256 KiB for ~+1.3% storage (see
     /// test/real-games/RESULTADOS_COMPARATIVAS.md).
     pub fn asset_default() -> Self {

@@ -1,6 +1,6 @@
 # CAVS Desktop
 
-The official desktop UI for CAVS — a **local build/update lab for game developers**.
+The official desktop UI for CAVS — a **local build/update lab for large files**.
 Tauri (Rust backend) + React (frontend). The backend calls the same CAVS Rust
 core (`cavs-sdk-core`) used by the CLI and SDKs; no CAVS logic is duplicated in
 TypeScript.

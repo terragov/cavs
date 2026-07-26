@@ -3,7 +3,7 @@
 //! The session/batch path is stateful — the origin mutates a per-session
 //! have-set to inline each cold chunk exactly once — so it is inherently
 //! sequential (one batch round-trip at a time). For container payloads
-//! (raw builds, directory trees: the game-asset focus) the client already
+//! (raw builds, directory trees: the generic file focus) the client already
 //! holds the manifest and its own cache, so it can compute the missing set
 //! itself and fetch those immutable chunks **by hash, concurrently**, from
 //! the edge-cacheable `/api/assets/{asset}/chunks/{hash}` endpoint.

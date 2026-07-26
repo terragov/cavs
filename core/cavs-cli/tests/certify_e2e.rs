@@ -48,10 +48,10 @@ fn make_dir_pair(root: &Path) -> (PathBuf, PathBuf) {
     std::fs::create_dir_all(new.join("assets")).unwrap();
 
     let big = pseudo_random(400_000, 1);
-    std::fs::write(old.join("game.bin"), &big).unwrap();
+    std::fs::write(old.join("payload.bin"), &big).unwrap();
     let mut big2 = big.clone();
     big2[200_000..200_064].copy_from_slice(&[0xAB; 64]);
-    std::fs::write(new.join("game.bin"), &big2).unwrap();
+    std::fs::write(new.join("payload.bin"), &big2).unwrap();
 
     let unchanged = pseudo_random(150_000, 2);
     std::fs::write(old.join("assets/level.dat"), &unchanged).unwrap();
@@ -655,15 +655,15 @@ fn certify_workspace_builds_branches_and_install_plans() {
         std::fs::create_dir_all(d).unwrap();
     }
     let content = pseudo_random(200_000, 51);
-    std::fs::write(src_base_v1.join("game.bin"), &content).unwrap();
+    std::fs::write(src_base_v1.join("payload.bin"), &content).unwrap();
     let mut content2 = content.clone();
     content2[100_000..100_032].copy_from_slice(&[0x22; 32]);
-    std::fs::write(src_base_v2.join("game.bin"), &content2).unwrap();
+    std::fs::write(src_base_v2.join("payload.bin"), &content2).unwrap();
     std::fs::write(src_win.join("launcher.exe"), pseudo_random(50_000, 52)).unwrap();
     std::fs::write(src_es.join("es.txt"), b"hola").unwrap();
 
     let ws_s = ws.to_str().unwrap();
-    assert_eq!(run(&["workspace", "init", ws_s, "--app", "my-game"]).0, 0);
+    assert_eq!(run(&["workspace", "init", ws_s, "--app", "my-app"]).0, 0);
     assert_eq!(run(&["depot", "add", "base", "--workspace", ws_s]).0, 0);
     assert_eq!(
         run(&[

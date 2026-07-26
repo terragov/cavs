@@ -55,7 +55,7 @@ CAVS optimizes a different shape:
 - **content-addressed release store** — package once per release, every
   version jump (v1→v10, v3→v10, reinstall) is served from the same
   immutable objects with zero per-pair work;
-- **persistent chunk cache** — bytes a player already fetched are never
+- **persistent chunk cache** — bytes a client already fetched are never
   fetched again, across versions and titles;
 - **hybrid reconstruction** — the previous install is a first-class byte
   source even with an empty cache;

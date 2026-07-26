@@ -798,30 +798,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let old_root = dir.path().join("v1");
         let new_root = dir.path().join("v2");
-        write_tree(&old_root, &[("game", pseudo_random(50_000, 50))]);
-        write_tree(&new_root, &[("game", pseudo_random(50_000, 51))]);
+        write_tree(&old_root, &[("payload", pseudo_random(50_000, 50))]);
+        write_tree(&new_root, &[("payload", pseudo_random(50_000, 51))]);
         std::fs::set_permissions(
-            new_root.join("game"),
+            new_root.join("payload"),
             std::fs::Permissions::from_mode(0o755),
         )
         .unwrap();
-        std::os::unix::fs::symlink("game", new_root.join("play")).unwrap();
+        std::os::unix::fs::symlink("payload", new_root.join("play")).unwrap();
 
         let sig = CavsSignature::sign_dir(&old_root, DEFAULT_BLOCK_SIZE, "v1").unwrap();
         let plan = build(&sig, &new_root, &BuildOptions::default()).unwrap();
 
         let install = dir.path().join("install");
-        write_tree(&install, &[("game", pseudo_random(50_000, 50))]);
+        write_tree(&install, &[("payload", pseudo_random(50_000, 50))]);
         apply_dir(&plan, &install, &install, &ApplyOptions::default()).unwrap();
 
-        let mode = std::fs::metadata(install.join("game"))
+        let mode = std::fs::metadata(install.join("payload"))
             .unwrap()
             .permissions()
             .mode();
         assert_ne!(mode & 0o111, 0, "exec bit applied");
         assert_eq!(
             std::fs::read_link(install.join("play")).unwrap(),
-            PathBuf::from("game")
+            PathBuf::from("payload")
         );
     }
 }

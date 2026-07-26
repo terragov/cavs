@@ -97,9 +97,9 @@ fn parallel_and_sequential_fetch_agree() {
             *b = 0;
         }
     }
-    let src = dir.path().join("game.bin");
+    let src = dir.path().join("payload.bin");
     std::fs::write(&src, &payload).unwrap();
-    let cavs = dir.path().join("game.cavs");
+    let cavs = dir.path().join("payload.cavs");
     let (ok, out) = run(
         "cavs",
         &[
@@ -124,7 +124,7 @@ fn parallel_and_sequential_fetch_agree() {
         &[
             "fetch",
             &url,
-            "game",
+            "payload",
             "-o",
             seq_out.to_str().unwrap(),
             "--cache",
@@ -134,7 +134,7 @@ fn parallel_and_sequential_fetch_agree() {
         ],
     );
     assert!(ok, "sequential fetch failed:\n{seq}");
-    assert_eq!(std::fs::read(seq_out.join("game.bin")).unwrap(), payload);
+    assert_eq!(std::fs::read(seq_out.join("payload.bin")).unwrap(), payload);
 
     // Parallel (eight connections), fresh cache.
     let par_out = dir.path().join("par");
@@ -144,7 +144,7 @@ fn parallel_and_sequential_fetch_agree() {
         &[
             "fetch",
             &url,
-            "game",
+            "payload",
             "-o",
             par_out.to_str().unwrap(),
             "--cache",
@@ -154,7 +154,7 @@ fn parallel_and_sequential_fetch_agree() {
         ],
     );
     assert!(ok, "parallel fetch failed:\n{par}");
-    assert_eq!(std::fs::read(par_out.join("game.bin")).unwrap(), payload);
+    assert_eq!(std::fs::read(par_out.join("payload.bin")).unwrap(), payload);
 
     // Same immutable missing set, same compression -> same wire egress.
     let seq_bytes = parse_inline_bytes(&seq);
@@ -177,7 +177,7 @@ fn parallel_and_sequential_fetch_agree() {
         &[
             "fetch",
             &url,
-            "game",
+            "payload",
             "-o",
             warm_out.to_str().unwrap(),
             "--cache",
@@ -192,7 +192,10 @@ fn parallel_and_sequential_fetch_agree() {
         0.0,
         "warm fetch must be 0 wire:\n{warm}"
     );
-    assert_eq!(std::fs::read(warm_out.join("game.bin")).unwrap(), payload);
+    assert_eq!(
+        std::fs::read(warm_out.join("payload.bin")).unwrap(),
+        payload
+    );
 }
 
 /// `--connections 0` forces the legacy session/batch path; it must still

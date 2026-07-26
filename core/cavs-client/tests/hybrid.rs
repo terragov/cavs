@@ -354,17 +354,17 @@ fn directory_mode_updates_only_changed_files() {
     // Build v1: three files, one nested.
     let build1 = d.join("Build_v1");
     std::fs::create_dir_all(build1.join("levels")).unwrap();
-    std::fs::write(build1.join("game.bin"), pseudo_random(700_000, 71)).unwrap();
+    std::fs::write(build1.join("payload.bin"), pseudo_random(700_000, 71)).unwrap();
     std::fs::write(build1.join("levels/l1.dat"), pseudo_random(400_000, 72)).unwrap();
     std::fs::write(build1.join("dropme.txt"), b"obsolete").unwrap();
 
-    // Build v2: game.bin changes, l1.dat unchanged, dropme.txt removed,
+    // Build v2: payload.bin changes, l1.dat unchanged, dropme.txt removed,
     // new file added.
     let build2 = d.join("Build_v2");
     std::fs::create_dir_all(build2.join("levels")).unwrap();
-    let mut game2 = std::fs::read(build1.join("game.bin")).unwrap();
-    game2[100_000..100_100].copy_from_slice(&pseudo_random(100, 73));
-    std::fs::write(build2.join("game.bin"), &game2).unwrap();
+    let mut payload2 = std::fs::read(build1.join("payload.bin")).unwrap();
+    payload2[100_000..100_100].copy_from_slice(&pseudo_random(100, 73));
+    std::fs::write(build2.join("payload.bin"), &payload2).unwrap();
     std::fs::copy(build1.join("levels/l1.dat"), build2.join("levels/l1.dat")).unwrap();
     std::fs::write(build2.join("newfile.bin"), pseudo_random(50_000, 74)).unwrap();
 
@@ -442,7 +442,10 @@ fn directory_mode_updates_only_changed_files() {
         ],
     );
     assert!(ok, "update v2 failed:\n{out}");
-    assert_eq!(std::fs::read(install.join("game.bin")).unwrap(), game2);
+    assert_eq!(
+        std::fs::read(install.join("payload.bin")).unwrap(),
+        payload2
+    );
     assert_eq!(
         std::fs::read(install.join("newfile.bin")).unwrap(),
         std::fs::read(build2.join("newfile.bin")).unwrap()

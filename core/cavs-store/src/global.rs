@@ -3,7 +3,7 @@
 //! One physical copy of each unique chunk across every asset and version,
 //! with reference counting and garbage collection. This is what turns the
 //! per-`.cavs` egress dedup into real server-side *storage* dedup: ingest
-//! v1 and v2 of a game and the bytes they share are stored once.
+//! v1 and v2 of a build and the bytes they share are stored once.
 //!
 //! On-disk layout under `root/`:
 //! ```text
@@ -2817,7 +2817,7 @@ mod tests {
             );
         }
         index.assets.insert(
-            "game".into(),
+            "app".into(),
             index.chunks.keys().take(40).cloned().collect(),
         );
 
@@ -3169,7 +3169,7 @@ mod tests {
                 assert!(store.put_chunk(h, c, 0, c.len() as u32).unwrap());
             }
             let refs: Vec<&ChunkHash> = hashes.iter().collect();
-            store.publish_asset(&rec("game", &refs)).unwrap();
+            store.publish_asset(&rec("app", &refs)).unwrap();
 
             // 10 KB of chunks at a 4 KB preferred size -> several packs.
             let stats = store.stats();
@@ -3278,13 +3278,13 @@ mod tests {
         let data = vec![7u8; 2000];
         let h = hash_chunk(&data);
         store.put_chunk(&h, &data, 0, 2000).unwrap();
-        store.publish_asset(&rec("game", &[&h])).unwrap();
+        store.publish_asset(&rec("app", &[&h])).unwrap();
 
         let out = dir.path().join("dist");
         let written = store.export_object_store(&out).unwrap();
         assert!(written.iter().any(|p| p.starts_with("chunks/packs/")));
         assert!(written.iter().any(|p| p.starts_with("chunks/indexes/")));
-        assert!(written.contains(&"assets/game/record.json".to_string()));
+        assert!(written.contains(&"assets/app/record.json".to_string()));
         for rel in &written {
             assert!(out.join(rel).is_file(), "{rel} missing");
         }
@@ -3307,7 +3307,7 @@ mod tests {
         let data = vec![9u8; 3000];
         let h = hash_chunk(&data);
         store.put_chunk(&h, &data, 0, 3000).unwrap();
-        store.publish_asset(&rec("game", &[&h])).unwrap();
+        store.publish_asset(&rec("app", &[&h])).unwrap();
         store.verify().unwrap();
 
         // Flip one byte inside the pack's data region.

@@ -208,7 +208,7 @@ fn warn_if_compressed_blob(
 /// A large file that changed almost everywhere and does not compress is a
 /// compressed/encrypted container: one source edit cascades over the whole
 /// output and no block patcher can help. Tell the developer now, not
-/// after players download it.
+/// after clients download it.
 fn warn_if_patch_hostile(warnings: &mut Vec<String>, e: &EntryReport, bytes: &[u8], reused: u64) {
     const MIN_SIZE: u64 = 1024 * 1024;
     if e.state != FileState::Modified || e.size < MIN_SIZE {

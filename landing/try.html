@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Try CAVS on your game build — local, no CDN, no account</title>
+<title>Try CAVS on your own build — local, no CDN, no account</title>
 <meta name="description" content="Run CAVS locally against two builds: compare update routes, inspect why updates are large, certify byte-identical reconstruction and export a reproducible report. Everything runs on your machine." />
 <meta name="author" content="Orelvis" />
 <meta name="theme-color" content="#0A0E1A" />
 
 <meta property="og:type" content="website" />
-<meta property="og:title" content="Try CAVS on your game build" />
+<meta property="og:title" content="Try CAVS on your own build" />
 <meta property="og:description" content="Point CAVS at two builds and get a release certification report: routes, sizes, disk I/O, byte-identical verification. 100% local." />
 <meta property="og:image" content="assets/og-thumb.webp" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Try CAVS on your game build" />
+<meta name="twitter:title" content="Try CAVS on your own build" />
 <meta name="twitter:description" content="No CDN required. No account required. Run it against two builds and get a report." />
 
 <link rel="icon" type="image/png" href="assets/logo-transparent-128.png" />
@@ -64,7 +64,7 @@
 <section class="page-head">
   <div class="wrap">
     <span class="eyebrow">Try CAVS</span>
-    <h1>Try CAVS on your<br><span class="accent">own game build.</span></h1>
+    <h1>Try CAVS on your<br><span class="accent">own build.</span></h1>
     <p class="section-sub">Run CAVS locally against two builds, compare update routes, inspect why updates are large, and generate a release certification report. <strong>No CDN required. No account required.</strong> Point it at two builds and get a report.</p>
     <div class="hero-cta" style="margin-top:26px;">
       <a class="btn btn-primary" href="https://github.com/orelvis15/cavs" target="_blank" rel="noopener">
@@ -85,7 +85,7 @@
       <h2 class="section-title">If you have two builds,<br>you can test CAVS today.</h2>
     </div>
     <div class="cards g3">
-      <div class="card reveal"><span class="idx">// builds</span><h3>Two versions of a build</h3><p>Any old→new pair: a folder export, a single binary, an archive of game data.</p></div>
+      <div class="card reveal"><span class="idx">// builds</span><h3>Two versions of a build</h3><p>Any old→new pair: a folder export, a single binary, a model checkpoint, an archive of binary data.</p></div>
       <div class="card reveal" style="transition-delay:.04s"><span class="idx">// godot</span><h3>A Godot PCK</h3><p>Certify PCK updates byte-for-byte and keep mounting with <span class="mono">load_resource_pack()</span>.</p></div>
       <div class="card reveal" style="transition-delay:.08s"><span class="idx">// folders</span><h3>Folder-based exports</h3><p>Directory builds get per-file diffs, staged applies and no-op detection.</p></div>
       <div class="card reveal" style="transition-delay:.12s"><span class="idx">// depots</span><h3>DLC &amp; language packs</h3><p>Model depots, branches and ownership locally — no platform account needed.</p></div>
@@ -241,7 +241,7 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
       </div>
     </div>
     <div class="steps" style="margin-top:28px;">
-      <div class="step reveal"><div class="n">01</div><h3>Download</h3><p>Only the chunks the player is missing, from a persistent <span class="mono">user://</span> cache.</p></div>
+      <div class="step reveal"><div class="n">01</div><h3>Download</h3><p>Only the chunks the client is missing, from a persistent <span class="mono">user://</span> cache.</p></div>
       <div class="step reveal" style="transition-delay:.05s"><div class="n">02</div><h3>Reconstruct</h3><p>The PCK is rebuilt byte-for-byte — the format never changes.</p></div>
       <div class="step reveal" style="transition-delay:.1s"><div class="n">03</div><h3>Verify</h3><p>SHA-256 per file against the signed manifest. Unverified PCKs are never mounted.</p></div>
       <div class="step reveal" style="transition-delay:.15s"><div class="n">04</div><h3>Mount</h3><p><span class="mono">ProjectSettings.load_resource_pack()</span> — plain Godot, every export platform.</p></div>
@@ -289,10 +289,10 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
     <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:22px;" class="cards">
       <div>
         <p class="mono" style="color:var(--green); font-size:13px; margin-bottom:10px;">Empty cache + previous install — hybrid reconstruction</p>
-        <pre class="code"><span class="comment"># the player has game_v1.pck but no CAVS cache yet</span>
-<span class="prompt">$</span> cavs-client fetch <span class="str">http://127.0.0.1:8990</span> game_v2 \
-    <span class="flag">--previous-artifact</span> ./game_v1.pck \
-    <span class="flag">--cache</span> ./cache <span class="flag">-o</span> game_v2.pck
+        <pre class="code"><span class="comment"># the client has build_v1.bin but no CAVS cache yet</span>
+<span class="prompt">$</span> cavs-client fetch <span class="str">http://127.0.0.1:8990</span> build_v2 \
+    <span class="flag">--previous-artifact</span> ./build_v1.bin \
+    <span class="flag">--cache</span> ./cache <span class="flag">-o</span> build_v2.bin
 <span class="comment"># verified ranges are copied from the old file;</span>
 <span class="comment"># only what changed is downloaded</span></pre>
       </div>
@@ -308,7 +308,7 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
       </div>
       <div>
         <p class="mono" style="color:var(--green); font-size:13px; margin-bottom:10px;">Depots, DLC and language packs — local workspace</p>
-        <pre class="code"><span class="prompt">$</span> cavs workspace init ./cavs-workspace <span class="flag">--app</span> my-game
+        <pre class="code"><span class="prompt">$</span> cavs workspace init ./cavs-workspace <span class="flag">--app</span> my-app
 <span class="prompt">$</span> cavs depot add base <span class="flag">--workspace</span> ./cavs-workspace
 <span class="prompt">$</span> cavs depot add lang-es <span class="flag">--language</span> es <span class="flag">--optional</span> \
     <span class="flag">--workspace</span> ./cavs-workspace
@@ -319,7 +319,7 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
       <div>
         <p class="mono" style="color:var(--green); font-size:13px; margin-bottom:10px;">Local testing server — development only</p>
         <pre class="code"><span class="prompt">$</span> cavs serve ./cavs-workspace \
-    <span class="flag">--app</span> my-game <span class="flag">--branch</span> beta <span class="flag">--port</span> 8990
+    <span class="flag">--app</span> my-app <span class="flag">--branch</span> beta <span class="flag">--port</span> 8990
 <span class="comment"># serves manifests, bootstraps, chunks, ranges,</span>
 <span class="comment"># .cavsplans and signatures to your launcher</span>
 <span class="comment"># or the Godot plugin — localhost, never production</span></pre>
@@ -342,7 +342,7 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
     <span class="flag">--out</span> cavs-repro.tar.zst</pre>
         <p class="lead" style="margin-top:18px;">The bundle includes the commands used, tool versions, environment metadata, configs, report JSON + Markdown, hashes and synthetic dataset seeds. Deterministic: exporting twice gives byte-identical bundles.</p>
         <div class="callout amber" style="margin-top:18px;">
-          <p>By default CAVS does <span class="big">not include private game files</span> in the bundle — hashes only. <span class="mono">--include-inputs</span> is for synthetic or shareable test data.</p>
+          <p>By default CAVS does <span class="big">not include private build files</span> in the bundle — hashes only. <span class="mono">--include-inputs</span> is for synthetic or shareable test data.</p>
         </div>
       </div>
       <div class="term">
@@ -389,7 +389,7 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
       <div class="faq-item"><button class="faq-q">Does CAVS require a CDN?</button><div class="faq-a"><p>No. CAVS runs completely locally for analysis, certification and offline update plans. A server only enters the picture when you want to deliver over HTTP — and the dev server ships in the same binary.</p></div></div>
       <div class="faq-item"><button class="faq-q">Is CAVS a SteamPipe replacement?</button><div class="faq-a"><p>No. CAVS includes SteamPipe-<em>style</em> analysis based on public documentation. It is an estimate model — never Valve's SteamPipe implementation, and every report says so.</p></div></div>
       <div class="faq-item"><button class="faq-q">Does CAVS replace butler?</button><div class="faq-a"><p>No. CAVS can benchmark against butler offline when butler is installed, but it does not replace itch.io's upload pipeline.</p></div></div>
-      <div class="faq-item"><button class="faq-q">Does the Godot plugin change my game format?</button><div class="faq-a"><p>No. CAVS reconstructs the original PCK byte-for-byte and Godot mounts it normally. If verification fails, nothing is mounted.</p></div></div>
+      <div class="faq-item"><button class="faq-q">Does the Godot plugin change my PCK format?</button><div class="faq-a"><p>No. CAVS reconstructs the original PCK byte-for-byte and Godot mounts it normally. If verification fails, nothing is mounted.</p></div></div>
       <div class="faq-item"><button class="faq-q">Is signing/encryption DRM?</button><div class="faq-a"><p>No. CAVS signing and optional encryption exist for integrity and controlled testing workflows — not DRM or license enforcement.</p></div></div>
       <div class="faq-item"><button class="faq-q">What exactly is stable in v1.0.0?</button><div class="faq-a"><p>The documented CLI families, the <span class="mono">.cavs</span> / <span class="mono">.cavssig</span> / <span class="mono">.cavsplan</span> / <span class="mono">.cavspatch</span> formats, the certification JSON schemas and exit codes, and the Godot plugin runtime API. See <span class="mono">docs/COMPATIBILITY.md</span>.</p></div></div>
     </div>
@@ -410,7 +410,7 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
         </a>
         <a class="btn btn-ghost" href="benchmarks.html">Read Benchmarks</a>
       </div>
-      <p class="cta-beta">Have a game with frequent updates? Open an issue or start a discussion — real-world test cases are welcome.</p>
+      <p class="cta-beta">Have a large artifact with frequent updates? Open an issue or start a discussion — real-world test cases are welcome.</p>
     </div>
   </div>
 </section>
@@ -421,7 +421,7 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
     <div class="foot-grid">
       <div>
         <a href="index.html" class="brand" style="font-size:18px;"><img src="assets/logo-transparent-128.png" alt="" style="width:26px;height:26px;" /> CAVS</a>
-        <p class="foot-note">Content-Addressable Verified Streaming.<br>Ship game updates that weigh what changed.</p>
+        <p class="foot-note">Content-Addressable Verified Streaming.<br>Ship updates that weigh what changed.</p>
       </div>
       <div class="foot-links">
         <a href="https://github.com/orelvis15/cavs" target="_blank" rel="noopener">GitHub</a>
@@ -431,7 +431,7 @@ var result := cavs.fetch(<span class="str">"main_pack"</span>)
         <a href="changelog.html">Changelog</a>
       </div>
     </div>
-    <p class="foot-note" style="margin-top:32px; opacity:.75;">© 2026 CAVS · Apache 2.0 licensed · CAVS certifies game updates locally before release — it is not a CDN, marketplace, SaaS, DRM system or game store.</p>
+    <p class="foot-note" style="margin-top:32px; opacity:.75;">© 2026 CAVS · Apache 2.0 licensed · CAVS certifies updates locally before release — it is not a CDN, marketplace, SaaS, DRM system or distribution storefront.</p>
   </div>
 </footer>
 

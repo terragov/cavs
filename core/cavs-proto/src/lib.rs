@@ -333,7 +333,7 @@ pub enum BatchItem {
 /// Decode a CVSP batch incrementally from a reader, invoking `on_item` per
 /// item. Peak memory is one instruction (≤ one chunk), independent of batch
 /// size — use this instead of [`BatchResponse::decode`] when the response
-/// body would be large (e.g. a cold install of a full game).
+/// body would be large (e.g. a cold install of a full release).
 pub fn decode_stream<R: std::io::Read>(
     r: &mut R,
     mut on_item: impl FnMut(BatchItem) -> std::result::Result<(), String>,

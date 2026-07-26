@@ -1,7 +1,7 @@
 # Traffic models — simulated user update behavior (v1.1.0)
 
 A patch policy comparison is meaningless without an update-behavior
-assumption: adjacent diffs look perfect if every player updates every
+assumption: adjacent diffs look perfect if every client updates every
 release, and terrible if half of them return after five patches. The
 patch policy benchmark makes that assumption explicit and prices every
 policy under it.
@@ -24,7 +24,7 @@ All default to 100,000 users (`--users` overrides).
 
 ```toml
 [traffic]
-name = "adjacent-heavy-live-game"
+name = "adjacent-heavy-live-service"
 users = 100000
 
 [[traffic.rule]]
@@ -71,7 +71,7 @@ policies and a full chunk-store install for CAVS.
 
 Use `adjacent-heavy` for the most favorable realistic case for adjacent
 pairwise diffs, `skip-heavy` to stress chains and long jumps,
-`live-service-weekly` for frequent-release games, `major-release` for
+`live-service-weekly` for frequent-release products, `major-release` for
 big returning waves. Replaying a measured graph under a different model
 costs no re-diffing:
 

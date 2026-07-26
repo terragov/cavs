@@ -16,8 +16,8 @@ export function ServerlessCdn({ sectionId }: CustomPageProps) {
 
   const [store, setStore] = useState("./store");
   const [dist, setDist] = useState("./dist");
-  const [base, setBase] = useState("https://cdn.example.com/game");
-  const [asset, setAsset] = useState("game");
+  const [base, setBase] = useState("https://cdn.example.com/dist");
+  const [asset, setAsset] = useState("app");
   const [connections, setConnections] = useState(8);
 
   const q = (s: string) => (/\s/.test(s) ? `"${s}"` : s);

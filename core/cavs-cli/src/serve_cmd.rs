@@ -82,7 +82,7 @@ pub fn serve(args: &ServeArgs) -> Result<()> {
     eprintln!("+----------------------------------------------------------------+");
     eprintln!("|  WARNING: DEVELOPMENT SERVER ONLY                              |");
     eprintln!("|  No auth, no TLS, not production hardened.                     |");
-    eprintln!("|  Never expose this to the internet or real players.            |");
+    eprintln!("|  Never expose this to the internet or real end users.          |");
     eprintln!("|  Use cavs-server for real deployments.                         |");
     eprintln!("+----------------------------------------------------------------+");
     if let Some(branch) = &args.branch {

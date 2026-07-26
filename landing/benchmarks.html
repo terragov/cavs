@@ -60,7 +60,7 @@
   <div class="wrap">
     <span class="eyebrow">Measured, not projected</span>
     <h1>The <span class="accent">benchmarks</span>, in full.</h1>
-    <p class="section-sub">Every number here is measured. Update payloads were captured over real HTTP sessions (<span class="mono">cavs-server</span> + <span class="mono">cavs-client</span>). Real-game figures come from open-source Godot projects exported to PCK at two real points in their git history. "Update" means what a player who already has the previous version downloads; the full-download baseline is the new release compressed with zstd&nbsp;-3.</p>
+    <p class="section-sub">Every number here is measured. Update payloads were captured over real HTTP sessions (<span class="mono">cavs-server</span> + <span class="mono">cavs-client</span>). The corpus is open-source Godot projects exported to PCK at two real points in their git history — public, reproducible payloads representative of large mixed-content binaries; CAVS itself is payload-agnostic. "Update" means what a client that already has the previous version downloads; the full-download baseline is the new release compressed with zstd&nbsp;-3.</p>
     <div class="trust" style="margin-top:26px;">
       <span><i class="dot"></i>butler v15.28.0 · xdelta3 3.2.0 · bsdiff 4.3</span>
       <span><i class="dot"></i>Apple M3 Pro, release binaries</span>
@@ -74,8 +74,8 @@
   <div class="wrap">
     <div class="section-head">
       <span class="eyebrow">The strong case</span>
-      <h2 class="section-title">Update payloads on real games.</h2>
-      <p class="section-sub">A player who already has the previous version downloads only the missing chunks required to reconstruct the new release.</p>
+      <h2 class="section-title">Update payloads on real builds.</h2>
+      <p class="section-sub">A client that already has the previous version downloads only the missing chunks required to reconstruct the new release.</p>
     </div>
     <div class="chart reveal" data-chart='{"title":"Full download vs CAVS update","subtitle":"MiB, lower is better","legend":[{"name":"Full download (zstd)","cls":"bar-a"},{"name":"CAVS update","cls":"bar-c"}],"groups":[{"label":"godotengine / tps-demo — tag 4.5 → master, 7 files","bars":[{"name":"Full","v":247.60,"cls":"bar-a","text":"247.60 MiB"},{"name":"CAVS","v":1.64,"cls":"bar-c","text":"1.64 MiB  −99.3%"}]},{"label":"GDQuest 3D third-person — HEAD~10 → HEAD, 468 files","bars":[{"name":"Full","v":27.61,"cls":"bar-a","text":"27.61 MiB"},{"name":"CAVS","v":8.70,"cls":"bar-c","text":"8.70 MiB  −68.5%"}]},{"label":"MechanicalFlower / Marble — 1.6.0 → 1.6.1","bars":[{"name":"Full","v":6.55,"cls":"bar-a","text":"6.55 MiB"},{"name":"CAVS","v":0.14,"cls":"bar-c","text":"0.14 MiB  −97.9%"}]}]}'></div>
     <div class="table-wrap reveal" style="margin-top:26px;">
@@ -115,7 +115,7 @@
         </tbody>
       </table>
     </div>
-    <p class="table-note">The server routed all four games to the bootstrap automatically (per-session estimate vs threshold); every reconstruction was byte-identical.</p>
+    <p class="table-note">The server routed all four builds to the bootstrap automatically (per-session estimate vs threshold); every reconstruction was byte-identical.</p>
   </div>
 </section>
 
@@ -268,7 +268,7 @@
     <h3 style="font-size:20px; margin:56px 0 16px;">Depots, sharing and install plans</h3>
     <div class="cards g3">
       <div class="card reveal"><span class="idx">// depot analyze-sharing</span><h3>98.9% shared</h3><p>Windows ↔ Linux depots of the same build share 48.83 MiB of 49.11 MiB — the workspace prices exactly what a shared depot would save in storage and egress.</p></div>
-      <div class="card reveal" style="transition-delay:.05s"><span class="idx">// install-plan</span><h3>0 B for the demo owner</h3><p>Install plans filter depots by platform, language and ownership and reuse chunks across depots: a demo owner who already installed the full game downloads nothing.</p></div>
+      <div class="card reveal" style="transition-delay:.05s"><span class="idx">// install-plan</span><h3>0 B for the trial-tier owner</h3><p>Install plans filter depots by platform, language and ownership and reuse chunks across depots: a trial-tier owner who already installed the full product downloads nothing.</p></div>
       <div class="card reveal" style="transition-delay:.1s"><span class="idx">// plan-update</span><h3>Honest routing</h3><p>The policy planner picks the 129 KiB <span class="mono">.cavsplan</span> for every previous-install state — and honestly picks the raw full download for a cold install of incompressible data, because a bootstrap would save nothing.</p></div>
     </div>
     <p class="table-note" style="margin-top:18px;">Raw outputs and reproduction commands: <span class="mono">docs/results/v0.9.0/</span> in the repository. Every SteamPipe-style figure is an estimate from public documentation, not Valve's exact SteamPipe implementation.</p>
@@ -281,7 +281,7 @@
     <div class="section-head">
       <span class="eyebrow">Reuse the installed build</span>
       <h2 class="section-title">The version on disk<br>is a source of bytes.</h2>
-      <p class="section-sub">A player with the old build installed but an empty cache copies verified ranges straight from the old file and fetches only what changed — every range BLAKE3-checked before it is written, the final output gated by SHA-256. Measured on a 128&nbsp;MiB synthetic build against a full re-download.</p>
+      <p class="section-sub">A client with the old build installed but an empty cache copies verified ranges straight from the old file and fetches only what changed — every range BLAKE3-checked before it is written, the final output gated by SHA-256. Measured on a 128&nbsp;MiB synthetic build against a full re-download.</p>
     </div>
     <div class="table-wrap reveal">
       <table>
@@ -298,7 +298,7 @@
     <div class="cards g4" style="margin-top:26px;">
       <div class="card reveal"><span class="idx">// previous artifact</span><h3>Reuse the old install</h3><p>Point the client at <span class="mono">--previous-artifact</span>. Shared ranges are copied from disk, not the network — no chunk cache required.</p></div>
       <div class="card reveal" style="transition-delay:.05s"><span class="idx">// signatures</span><h3>Compact .cavssig</h3><p>A deterministic old-version signature — 88&nbsp;KiB for a 128&nbsp;MiB build (~0.07%) — lets a new version be diffed without the old bytes.</p></div>
-      <div class="card reveal" style="transition-delay:.1s"><span class="idx">// no-op</span><h3>Skip unchanged work</h3><p>An output that already matches costs <strong>0 payload bytes</strong>. In directory mode, unchanged files — including player mods — are never rewritten.</p></div>
+      <div class="card reveal" style="transition-delay:.1s"><span class="idx">// no-op</span><h3>Skip unchanged work</h3><p>An output that already matches costs <strong>0 payload bytes</strong>. In directory mode, unchanged files — including user modifications — are never rewritten.</p></div>
       <div class="card reveal" style="transition-delay:.15s"><span class="idx">// coalescing</span><h3>Fewer, larger reads</h3><p>Adjacent copy ranges merge: on the shifted build, <strong>1,082 chunk ops → 18</strong> contiguous reads, read amplification 1.0.</p></div>
     </div>
     <div class="callout">
@@ -397,7 +397,7 @@
     <div class="section-head">
       <span class="eyebrow">Client cost</span>
       <h2 class="section-title">Constant memory, whatever the size.</h2>
-      <p class="section-sub">The client reconstructs by streaming to disk — batch-decoded from the socket → disk cache → <span class="mono">.part</span> → SHA-256 → atomic rename — so RAM stays flat regardless of game size. Measured on the tps-demo update (569 MB game, release binaries).</p>
+      <p class="section-sub">The client reconstructs by streaming to disk — batch-decoded from the socket → disk cache → <span class="mono">.part</span> → SHA-256 → atomic rename — so RAM stays flat regardless of payload size. Measured on the tps-demo update (569 MB payload, release binaries).</p>
     </div>
     <div class="proof reveal">
       <div class="proof-card"><div class="num blue">7 MiB</div><div class="label">Peak client RAM</div><div class="desc">update, streamed to disk</div></div>
@@ -424,7 +424,7 @@
       <li><strong>Pairwise delta tools</strong> can be smaller for one exact version pair.</li>
     </ul>
     <div class="callout blue" style="margin-top:28px;">
-      Where redundancy <em>does</em> cross content (shared episode intros): 7–21% storage savings by codec; warm re-watch −100% egress. CAVS is strongest for <span class="big">game updates, engine packs, launchers, DLC, binary assets and version streams</span>.
+      Where redundancy <em>does</em> cross content (shared episode intros): 7–21% storage savings by codec; warm re-watch −100% egress. CAVS is strongest for <span class="big">application and machine builds, AI models and datasets, disk and container images, installers, add-on content, binary assets and version streams</span>.
     </div>
   </div>
 </section>
@@ -440,7 +440,7 @@
     <pre class="code"><span class="prompt">$</span> cavs bench gen <span class="flag">--out</span> ds <span class="flag">--size</span> 1GiB
 <span class="prompt">$</span> cavs bench suite <span class="flag">--dataset</span> ds <span class="flag">--out</span> results
 <span class="comment"># → results/summary.md, results/summary.json</span></pre>
-    <p class="table-note">The real-game harnesses and their raw result data live in the full development repository; the measured summaries above are what those harnesses produced. Full write-ups: <span class="mono">docs/BENCHMARKS.md</span>, <span class="mono">docs/ROUTE_BENCHMARKS.md</span>, <span class="mono">docs/STEAMPIPE_COMPARISON.md</span>, <span class="mono">docs/results/v0.8.0/</span>, <span class="mono">docs/results/v0.9.0/</span>.</p>
+    <p class="table-note">The full benchmark harnesses and their raw result data live in the full development repository; the measured summaries above are what those harnesses produced. Full write-ups: <span class="mono">docs/BENCHMARKS.md</span>, <span class="mono">docs/ROUTE_BENCHMARKS.md</span>, <span class="mono">docs/STEAMPIPE_COMPARISON.md</span>, <span class="mono">docs/results/v0.8.0/</span>, <span class="mono">docs/results/v0.9.0/</span>.</p>
   </div>
 </section>
 
@@ -450,7 +450,7 @@
     <div class="foot-grid">
       <div>
         <a href="index.html" class="brand" style="font-size:18px;"><img src="assets/logo-transparent-128.png" alt="" style="width:26px;height:26px;" /> CAVS</a>
-        <p class="foot-note">Content-Addressable Verified Streaming.<br>Ship game updates that weigh what changed.</p>
+        <p class="foot-note">Content-Addressable Verified Streaming.<br>Ship updates that weigh what changed.</p>
       </div>
       <div class="foot-links">
         <a href="https://github.com/orelvis15/cavs" target="_blank" rel="noopener">GitHub</a>

@@ -112,7 +112,7 @@ fn resolve_raw_mode(
     // sweep lock the whole version stream into large chunks. Subsequent
     // versions (--prev) measure real reuse and keep continuity.
     if payload.likely_update_heavy && prev.is_none() && opts.bootstrap {
-        // fastcdc-16k: on the real-game pairs it cut update egress 60–68%
+        // fastcdc-16k: on the real build pairs it cut update egress 60–68%
         // vs fastcdc-64k for ~+4% cold chunk-path egress — and this branch
         // only fires when --bootstrap serves the cold path anyway. The
         // profile label locks the stream's boundaries; later versions keep

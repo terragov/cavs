@@ -512,11 +512,11 @@ mod tests {
     fn init_add_build_promote_rollback() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("ws");
-        let ws = Workspace::init(&root, "my-game").unwrap();
-        ws.add_depot("my-game", depot("base")).unwrap();
-        ws.add_depot("my-game", depot("windows")).unwrap();
-        ws.add_branch("my-game", branch("public")).unwrap();
-        ws.add_branch("my-game", branch("beta")).unwrap();
+        let ws = Workspace::init(&root, "my-app").unwrap();
+        ws.add_depot("my-app", depot("base")).unwrap();
+        ws.add_depot("my-app", depot("windows")).unwrap();
+        ws.add_branch("my-app", branch("public")).unwrap();
+        ws.add_branch("my-app", branch("beta")).unwrap();
 
         let src = dir.path().join("content");
         std::fs::create_dir_all(&src).unwrap();
@@ -524,7 +524,7 @@ mod tests {
 
         let b1 = ws
             .create_build(
-                "my-game",
+                "my-app",
                 Some("v1"),
                 Some("beta"),
                 &[("base".into(), src.clone())],
@@ -534,7 +534,7 @@ mod tests {
         assert_eq!(b1.id, "build_1001");
         let b2 = ws
             .create_build(
-                "my-game",
+                "my-app",
                 Some("v2"),
                 Some("beta"),
                 &[("base".into(), src)],
@@ -544,24 +544,24 @@ mod tests {
         assert_eq!(b2.id, "build_1002");
 
         // beta followed both builds; public has none yet.
-        let app = ws.load_app("my-game").unwrap();
+        let app = ws.load_app("my-app").unwrap();
         assert_eq!(
             app.branch("beta").unwrap().current_build.as_deref(),
             Some("build_1002")
         );
         assert_eq!(app.branch("public").unwrap().current_build, None);
 
-        ws.promote("my-game", "public", "build_1002").unwrap();
-        let app = ws.load_app("my-game").unwrap();
+        ws.promote("my-app", "public", "build_1002").unwrap();
+        let app = ws.load_app("my-app").unwrap();
         assert_eq!(
             app.branch("public").unwrap().current_build.as_deref(),
             Some("build_1002")
         );
 
         // Rollback only to builds the branch has served.
-        assert!(ws.rollback("my-game", "public", "build_1001").is_err());
-        ws.rollback("my-game", "beta", "build_1001").unwrap();
-        let app = ws.load_app("my-game").unwrap();
+        assert!(ws.rollback("my-app", "public", "build_1001").is_err());
+        ws.rollback("my-app", "beta", "build_1001").unwrap();
+        let app = ws.load_app("my-app").unwrap();
         assert_eq!(
             app.branch("beta").unwrap().current_build.as_deref(),
             Some("build_1001")

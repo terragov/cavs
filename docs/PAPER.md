@@ -1,4 +1,4 @@
-# CAVS-1: Content-Addressable Verified Streaming for Efficient Game Asset Updates
+# CAVS-1: Content-Addressable Verified Streaming for Efficient Large-File Updates
 
 **Author:** Orelvis Lago / CAVS Research Draft  
 **Date:** 2026-07-04  
@@ -10,19 +10,19 @@
 
 ## Abstract
 
-Modern games and media-heavy applications frequently distribute large binary asset packs, such as Godot PCK files, Unity AssetBundles, Unreal PAK/UCAS containers, media bundles, and downloadable content packages. Conventional distribution often sends an entire updated package, while pairwise delta tools such as xdelta and bsdiff can produce very small patches but require per-version-pair generation and operational management. This paper presents **CAVS-1**, a content-addressable verified streaming layer that encodes files and asset bundles into reusable chunks, publishes signed reconstruction manifests, transmits only missing chunks to a client-side cache, and reconstructs target files via constant-memory streaming to disk.
+Many systems distribute large binary payloads that change only partially between versions: application and machine images, AI model weights and checkpoints, datasets, container and disk images, media bundles, scientific data, backups, and engine asset packs (Godot PCK files, Unity AssetBundles, Unreal PAK/UCAS containers). Conventional distribution often sends an entire updated package, while pairwise delta tools such as xdelta and bsdiff can produce very small patches but require per-version-pair generation and operational management. This paper presents **CAVS-1**, a content-addressable verified streaming layer that encodes files and bundles into reusable chunks, publishes signed reconstruction manifests, transmits only missing chunks to a client-side cache, and reconstructs target files via constant-memory streaming to disk.
 
-CAVS-1 is not a replacement for video codecs, file compression, or existing game distribution platforms. It is a complementary delivery and update layer designed for versioned assets, repeated content, game patches, content delivery networks, and runtime asset systems. Benchmarks on real Godot games exported as PCK files showed update payload reductions of 51.9% to 98.0% versus downloading the full updated PCK compressed with zstd. Comparative tests showed xdelta3 and bsdiff can beat CAVS in pure byte count for a single v1-to-v2 pair, but CAVS serves arbitrary version jumps without maintaining a pairwise patch graph (all-pairs one-hop coverage is O(N^2); practical adjacent, ladder, base-version and hot-pair policies trade storage for patch chains), and supports resumable chunk fetches, cross-version cache reuse, and constant-memory verified reconstruction.
+CAVS-1 is not a replacement for video codecs, file compression, or existing distribution platforms. It is a complementary delivery and update layer designed for versioned large files, repeated content, incremental patches, content delivery networks, and runtime asset systems. The benchmark corpus is real Godot projects exported as PCK files — chosen because they are public, reproducible and representative of large mixed-content binary payloads — and showed update payload reductions of 51.9% to 98.0% versus downloading the full updated container compressed with zstd. Comparative tests showed xdelta3 and bsdiff can beat CAVS in pure byte count for a single v1-to-v2 pair, but CAVS serves arbitrary version jumps without maintaining a pairwise patch graph (all-pairs one-hop coverage is O(N^2); practical adjacent, ladder, base-version and hot-pair policies trade storage for patch chains), and supports resumable chunk fetches, cross-version cache reuse, and constant-memory verified reconstruction.
 
 ---
 
 ## 1. Introduction
 
-Game updates often modify only a small portion of the installed content. However, because engines commonly pack assets into large containers, a small asset edit can cause large binary changes in the surrounding pack. This can produce oversized downloads, high local disk I/O, longer update times, and user frustration.
+Updates to large payloads often modify only a small portion of the installed content. However, because producers commonly pack many files into large containers (archives, image layers, checkpoint files, asset packs), a small edit can cause large binary changes in the surrounding container. This can produce oversized downloads, high local disk I/O, longer update times, and user frustration.
 
 The core research question is:
 
-> Can a delivery layer use content-addressable chunks, a client cache, and verified streaming reconstruction to reduce game update downloads without replacing existing game engines or codecs?
+> Can a delivery layer use content-addressable chunks, a client cache, and verified streaming reconstruction to reduce large-file update downloads without replacing the producer's existing formats, tooling or codecs?
 
 CAVS-1 answers this by separating three concerns:
 
@@ -34,11 +34,11 @@ CAVS-1 answers this by separating three concerns:
 
 ## 2. Problem Statement
 
-A game developer may ship:
+A publisher may ship:
 
 ```text
-Game v1: main.pck = 569 MiB
-Game v2: main.pck = 569 MiB with a few files changed
+Release v1: main container = 569 MiB
+Release v2: main container = 569 MiB with a few files changed
 ```
 
 A naive update sends the full v2 package. A pairwise delta tool sends only a binary patch from v1 to v2. CAVS takes a different approach:
@@ -56,10 +56,10 @@ The design goal is not to beat optimal pairwise binary deltas for a single updat
 - many versions alive at once;
 - interrupted downloads;
 - clients jumping from v1 to v5;
-- games with DLC branches;
+- products with optional or add-on content branches;
 - shared content across packages;
-- launchers and CDNs;
-- engine plugins and runtime mounting;
+- installers, launchers and CDNs;
+- host runtimes that mount content packs at runtime;
 - CI/CD pipelines that need measurable update budgets.
 
 ---
@@ -70,7 +70,7 @@ The design goal is not to beat optimal pairwise binary deltas for a single updat
 
 Deduplication systems eliminate repeated data at the chunk level. Content-addressable storage identifies chunks by hash rather than by path or location. These concepts are mature and appear in backup systems, object stores, Git, IPFS, CAS systems, and container registries.
 
-CAVS builds on this field but narrows the product target to verified distribution of game/media assets and update reconstruction.
+CAVS builds on this field but narrows the product target to verified distribution of large binary payloads and update reconstruction.
 
 ### 3.2 Rsync and Delta Encoding
 
@@ -80,15 +80,15 @@ CAVS differs operationally: it packages each release once into a chunk store and
 
 ### 3.3 Git and Packfiles
 
-Git stores content-addressed objects and uses packfiles with delta compression. Git is optimized for source control and object history, not direct runtime asset delivery to game clients. CAVS borrows the idea of content-addressed objects but focuses on binary asset distribution, streaming reconstruction, and client cache negotiation.
+Git stores content-addressed objects and uses packfiles with delta compression. Git is optimized for source control and object history, not direct runtime delivery of large binaries to end clients. CAVS borrows the idea of content-addressed objects but focuses on binary asset distribution, streaming reconstruction, and client cache negotiation.
 
 ### 3.4 IPFS and Merkle DAGs
 
-IPFS provides content-addressed block storage and content-addressed links. CAVS is not a peer-to-peer file system. It uses a managed publisher/server/client model intended for games, media bundles, launchers, and enterprise distribution.
+IPFS provides content-addressed block storage and content-addressed links. CAVS is not a peer-to-peer file system. It uses a managed publisher/server/client model intended for application and machine builds, models and datasets, media bundles, launchers, and enterprise distribution.
 
 ### 3.5 Content-Defined Chunking and FastCDC
 
-Content-defined chunking cuts data based on content rather than fixed offsets. This helps when insertions or deletions shift file positions. CAVS uses CDC-style chunking, with a tested game-distribution default of min/avg/max 16/64/256 KiB and zstd level 3 for batch/chunk compression.
+Content-defined chunking cuts data based on content rather than fixed offsets. This helps when insertions or deletions shift file positions. CAVS uses CDC-style chunking, with a tested large-binary-distribution default of min/avg/max 16/64/256 KiB and zstd level 3 for batch/chunk compression.
 
 ### 3.6 SteamPipe and Game Pack Files
 
@@ -150,7 +150,7 @@ A manifest is the authoritative reconstruction recipe. It should contain:
 ```json
 {
   "format": "CAVS-1",
-  "asset_id": "game-main-pck",
+  "asset_id": "app-main-pack",
   "version": "1.6.1",
   "chunker": {"mode": "cdc", "min": 16384, "avg": 65536, "max": 262144},
   "compression": {"algorithm": "zstd", "level": 3},
@@ -198,7 +198,7 @@ Preferred scalable mode:
 
 The optimized client does not build the target file in memory. It writes to a temporary `.part` file chunk by chunk, computes the final SHA-256 as bytes are written, and atomically renames the `.part` file only after verification succeeds.
 
-This prevents corrupted partial downloads from appearing as valid game packs.
+This prevents corrupted partial downloads from appearing as valid content packs.
 
 ---
 
@@ -229,7 +229,7 @@ Transport: HTTPS
 
 ## 6. Experimental Methodology
 
-The benchmark suite used real Godot games exported as PCK files from two historical references per repository. The tests measured HTTP egress in actual client/server sessions.
+The benchmark corpus is real Godot projects exported as PCK files from two historical references per repository — public, reproducible payloads representative of large mixed-content binaries. The layer itself is payload-agnostic. The tests measured HTTP egress in actual client/server sessions.
 
 ### 6.1 Baselines
 
@@ -257,9 +257,9 @@ The benchmark suite used real Godot games exported as PCK files from two histori
 
 ## 7. Results
 
-### 7.1 Real Godot Games
+### 7.1 Benchmark corpus: real Godot projects
 
-| Game | Versions | PCK v2 | PCK.zst baseline update | CAVS update | Delta |
+| Project | Versions | PCK v2 | PCK.zst baseline update | CAVS update | Delta |
 |---|---|---:|---:|---:|---:|
 | marble | 1.6.0 -> 1.6.1 | 9.59 MiB | 6.55 MiB | 0.19 MiB | -97.1% |
 | gdquest | HEAD~10 -> HEAD | 61.09 MiB | 27.61 MiB | 13.27 MiB | -51.9% |
@@ -269,7 +269,7 @@ All tested cases were byte-identical after reconstruction and were mountable by 
 
 ### 7.2 Pairwise Delta Comparison
 
-| Game | zstd full | zip full | rsync wire | rdiff | xdelta3 -9 | bsdiff | CAVS wire |
+| Project | zstd full | zip full | rsync wire | rdiff | xdelta3 -9 | bsdiff | CAVS wire |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | marble | 6.55 | 6.34 | 0.02 | 0.01 | 0.00 | 0.00 | 0.19 |
 | gdquest | 27.61 | 27.42 | 54.86 | 7.06 | 3.78 | 3.82 | 13.27 |
@@ -279,7 +279,7 @@ Pairwise delta tools win the pure byte-count sprint for a single v1-to-v2 jump. 
 
 ### 7.3 Delta Generation Cost
 
-| Game | xdelta3 make | bsdiff make | bsdiff RSS | CAVS pack v2 | CAVS pack RSS |
+| Project | xdelta3 make | bsdiff make | bsdiff RSS | CAVS pack v2 | CAVS pack RSS |
 |---|---:|---:|---:|---:|---:|
 | marble | 0.7 s | 1.4 s | 186 MiB | 0.9 s | 15 MiB |
 | gdquest | 1.0 s | 15.2 s | 1171 MiB | 4.9 s | 67 MiB |
@@ -287,7 +287,7 @@ Pairwise delta tools win the pure byte-count sprint for a single v1-to-v2 jump. 
 
 ### 7.4 Chunk Size Sweep
 
-| Game | Avg chunk | Unique chunks | Update MiB | .cavs MiB |
+| Project | Avg chunk | Unique chunks | Update MiB | .cavs MiB |
 |---|---:|---:|---:|---:|
 | marble | 64 KiB | 129 | 0.14 | 6.91 |
 | marble | 256 KiB | 32 | 0.19 | 6.69 |
@@ -299,7 +299,7 @@ Pairwise delta tools win the pure byte-count sprint for a single v1-to-v2 jump. 
 | tps | 256 KiB | 1424 | 4.97 | 252.01 |
 | tps | 1024 KiB | 353 | 16.08 | 250.32 |
 
-Recommendation for game distribution: **CDC avg 64 KiB, min 16 KiB, max 256 KiB, zstd level 3**.
+Recommendation for large-binary distribution: **CDC avg 64 KiB, min 16 KiB, max 256 KiB, zstd level 3**.
 
 ### 7.5 Constant-Memory Client Optimization
 
@@ -355,7 +355,7 @@ The third candidate is **CAVS Delivery SDK** for launchers, Unity, Unreal, and e
 
 ## 10. Conclusion
 
-CAVS-1 demonstrates that a content-addressable chunk store, signed manifests, missing-set transport, zstd batch compression, and constant-memory verified reconstruction can dramatically reduce game asset update payloads versus full-package distribution while avoiding the operational complexity of per-version-pair deltas. The results justify further work on engine integrations, SteamPipe analysis tooling, formal security review, and patent filing.
+CAVS-1 demonstrates that a content-addressable chunk store, signed manifests, missing-set transport, zstd batch compression, and constant-memory verified reconstruction can dramatically reduce large-file update payloads versus full-package distribution while avoiding the operational complexity of per-version-pair deltas. The results justify further work on engine integrations, SteamPipe analysis tooling, formal security review, and patent filing.
 
 ---
 

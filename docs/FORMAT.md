@@ -1,10 +1,11 @@
 # CAVS-1 — Binary format specification (v1.0)
 
 CAVS-1 (*Content-Addressable Verified Streaming*, v1) is a content-addressable
-container format for **game content** (builds, packs, bundles, patches) — and,
-secondarily, video. It stores builds, binary assets, or already-packaged
-segments (CMAF/fMP4) as **deduplicated chunks identified by their BLAKE3-256
-hash**, plus the tables needed to reconstruct the original files byte-for-byte.
+container format for **large files** (application and machine builds, models,
+datasets, images, packs, bundles, patches) — and, secondarily, video. It stores
+builds, binary assets, or already-packaged segments (CMAF/fMP4) as
+**deduplicated chunks identified by their BLAKE3-256 hash**, plus the tables
+needed to reconstruct the original files byte-for-byte.
 It is **not a pixel codec**: when it packages video, encoding stays in mature
 codecs (H.264, HEVC, VP9, AV1…).
 
@@ -223,12 +224,12 @@ Two physical layouts, fixed when the store is created:
 
 ## Packfiles — `.cavspack` and `.cavsindex` (since 0.4.0)
 
-Object-per-chunk storage is operationally expensive at scale (a 570 MB game
+Object-per-chunk storage is operationally expensive at scale (a 570 MB build
 is ~6,000 small files). Packfiles keep the same content-addressed identity
 model with a production-friendly physical shape. Chunks are written in
 reconstruction order, so update fetches touch mostly-contiguous ranges; the
 server coalesces chunk reads within a 64 KiB gap into single physical reads
-(capped at 8 MiB), measured at 65–170× fewer reads on real games with 1.000
+(capped at 8 MiB), measured at 65–170× fewer reads on real builds with 1.000
 read amplification.
 
 ### `.cavspack` layout
@@ -306,7 +307,7 @@ same runtime model:
 - **Binary v2** — a compact sectioned encoding, served when the client asks
   for it (`Accept: application/vnd.cavs.manifest-v2` or `?format=binary-v2`).
   Implemented in the `cavs-manifest` crate; ~75–77% smaller than JSON v1 on
-  real 64 KiB-chunked game builds, with parse time at parity.
+  real 64 KiB-chunked builds, with parse time at parity.
 
 Readers detect the format from the bytes themselves (`CAVSMF2\0` magic vs
 JSON), so no out-of-band hint is needed.

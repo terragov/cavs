@@ -289,9 +289,9 @@ fn manifest_export_and_bench() {
 fn packfile_store_add_stat_verify_export() {
     let dir = tempfile::tempdir().unwrap();
     let payload = pseudo_random(2_500_000, 33);
-    let pck = dir.path().join("game.pck");
+    let pck = dir.path().join("content.pck");
     std::fs::write(&pck, &payload).unwrap();
-    let cavs = dir.path().join("game.cavs");
+    let cavs = dir.path().join("content.cavs");
     let (ok, out) = run(&[
         "pack",
         "--raw",
@@ -306,7 +306,7 @@ fn packfile_store_add_stat_verify_export() {
         "store",
         store.to_str().unwrap(),
         "add",
-        "game",
+        "app",
         cavs.to_str().unwrap(),
         "--storage",
         "packfiles",
@@ -334,7 +334,7 @@ fn packfile_store_add_stat_verify_export() {
     ]);
     assert!(ok, "export failed:\n{out}");
     assert!(dist.join("chunks/packs").is_dir());
-    assert!(dist.join("assets/game/record.json").is_file());
+    assert!(dist.join("assets/app/record.json").is_file());
 
     // Corrupt one byte of a pack: verify must fail.
     fn find_pack(dir: &Path) -> Option<PathBuf> {

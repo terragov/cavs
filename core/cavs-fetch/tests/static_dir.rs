@@ -67,11 +67,11 @@ fn build_tree(dir: &std::path::Path) -> Vec<u8> {
             .collect::<String>()
     };
     let manifest = serde_json::json!({
-        "asset": "game",
+        "asset": "app",
         "asset_uuid": "00000000000000000000000000000000",
         "tracks": [{
             "track_id": 0, "kind": "data", "codec": "raw",
-            "name": "game.bin", "timescale": 0, "init_chunks": []
+            "name": "payload.bin", "timescale": 0, "init_chunks": []
         }],
         "segments": [{
             "segment_id": 0, "track_id": 0, "pts_start": 0, "duration": 0,
@@ -83,17 +83,17 @@ fn build_tree(dir: &std::path::Path) -> Vec<u8> {
         "merkle_root": "",
         "signature": null,
         "signer_pubkey": null,
-        "meta": [["payload", "raw"], [format!("sha256:game.bin"), sha]],
+        "meta": [["payload", "raw"], [format!("sha256:payload.bin"), sha]],
     });
-    std::fs::create_dir_all(dir.join("assets/game")).unwrap();
+    std::fs::create_dir_all(dir.join("assets/app")).unwrap();
     std::fs::write(
-        dir.join("assets/game/manifest.json"),
+        dir.join("assets/app/manifest.json"),
         serde_json::to_vec_pretty(&manifest).unwrap(),
     )
     .unwrap();
     std::fs::write(
-        dir.join("assets/game/chunk-map.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({ "asset": "game", "chunks": entries }))
+        dir.join("assets/app/chunk-map.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({ "asset": "app", "chunks": entries }))
             .unwrap(),
     )
     .unwrap();
@@ -116,21 +116,21 @@ fn fetch_static_reconstructs_and_reuses() {
         connections: 4,
         ..Default::default()
     };
-    let stats = fetch_static(&source, "game", &out, &cache, &opts).unwrap();
+    let stats = fetch_static(&source, "app", &out, &cache, &opts).unwrap();
     assert_eq!(stats.fetched, 3);
     assert_eq!(stats.reused, 0);
     assert!(
         stats.wire_bytes < full.len() as u64,
         "zstd wire savings expected"
     );
-    assert_eq!(std::fs::read(out.join("game.bin")).unwrap(), full);
+    assert_eq!(std::fs::read(out.join("payload.bin")).unwrap(), full);
 
     // Warm install into a fresh output but the same cache: 0 downloads.
     let out2 = dir.path().join("install2");
-    let stats2 = fetch_static(&source, "game", &out2, &cache, &opts).unwrap();
+    let stats2 = fetch_static(&source, "app", &out2, &cache, &opts).unwrap();
     assert_eq!(stats2.fetched, 0);
     assert_eq!(stats2.reused, 3);
-    assert_eq!(std::fs::read(out2.join("game.bin")).unwrap(), full);
+    assert_eq!(std::fs::read(out2.join("payload.bin")).unwrap(), full);
 }
 
 #[test]
@@ -149,6 +149,6 @@ fn cancellation_stops_the_fetch() {
         cancel: Some(&cancel),
         ..Default::default()
     };
-    let err = fetch_static(&source, "game", &out, &cache, &opts).unwrap_err();
+    let err = fetch_static(&source, "app", &out, &cache, &opts).unwrap_err();
     assert!(matches!(err, FetchError::Cancelled), "got {err}");
 }

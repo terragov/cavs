@@ -45,7 +45,7 @@ export const SECTION_TEXT: Record<string, Bi> = {
       help: {
         summary: "A project remembers your engine type, build paths, output folders and preferred workflow.",
         points: [
-          "Create a project per game so paths and settings are remembered.",
+          "Create a project per product so paths and settings are remembered.",
           "Each project keeps its own releases and reports folders.",
           "Open a project to see its dashboard and recent work.",
         ],
@@ -57,7 +57,7 @@ export const SECTION_TEXT: Record<string, Bi> = {
       help: {
         summary: "Un proyecto recuerda tu tipo de motor, rutas de compilación, carpetas de salida y flujo preferido.",
         points: [
-          "Crea un proyecto por juego para recordar rutas y configuración.",
+          "Crea un proyecto por producto para recordar rutas y configuración.",
           "Cada proyecto guarda sus propias carpetas de releases e informes.",
           "Abre un proyecto para ver su panel y trabajo reciente.",
         ],
@@ -100,7 +100,7 @@ export const SECTION_TEXT: Record<string, Bi> = {
         summary: "A guided wizard for the core Godot use case: turn two PCK files into a small runtime update.",
         points: [
           "Select a base PCK and an updated PCK, then name the asset and version.",
-          "CAVS builds an update plan so the game downloads only what changed.",
+          "CAVS builds an update plan so the client downloads only what changed.",
           "Finish by starting a local server and copying the GDScript snippet.",
         ],
       },
@@ -116,7 +116,7 @@ export const SECTION_TEXT: Record<string, Bi> = {
         summary: "Un asistente guiado para el caso principal de Godot: convertir dos archivos PCK en una actualización pequeña.",
         points: [
           "Selecciona el PCK base y el PCK actualizado, luego nombra el asset y la versión.",
-          "CAVS crea un plan de actualización para que el juego descargue solo lo que cambió.",
+          "CAVS crea un plan de actualización para que el cliente descargue solo lo que cambió.",
           "Termina iniciando un servidor local y copiando el snippet de GDScript.",
         ],
       },
@@ -317,7 +317,7 @@ export const SECTION_TEXT: Record<string, Bi> = {
         points: [
           "Select the old build folder and the plan/release file.",
           "The output is written to this operation's folder.",
-          "Use it to build confidence before integrating CAVS into a game.",
+          "Use it to build confidence before integrating CAVS into your product.",
         ],
       },
     },
@@ -329,7 +329,7 @@ export const SECTION_TEXT: Record<string, Bi> = {
         points: [
           "Selecciona la carpeta de build vieja y el archivo de plan/release.",
           "La salida se escribe en la carpeta de esta operación.",
-          "Úsalo para ganar confianza antes de integrar CAVS en un juego.",
+          "Úsalo para ganar confianza antes de integrar CAVS en tu producto.",
         ],
       },
     },
@@ -467,9 +467,9 @@ export const SECTION_TEXT: Record<string, Bi> = {
   "install-plan": {
     en: {
       label: "Install Plan",
-      tagline: "What would a player download?",
+      tagline: "What would a client download?",
       help: {
-        summary: "Simulates a player's download based on platform, language, ownership and installed version.",
+        summary: "Simulates a client download based on platform, language, ownership and installed version.",
         points: [
           "Choose platform, language and owned depots.",
           "See per-depot update size and shared content reused.",
@@ -479,9 +479,9 @@ export const SECTION_TEXT: Record<string, Bi> = {
     },
     es: {
       label: "Plan de instalación",
-      tagline: "¿Qué descargaría un jugador?",
+      tagline: "¿Qué descargaría un cliente?",
       help: {
-        summary: "Simula la descarga de un jugador según plataforma, idioma, propiedad y versión instalada.",
+        summary: "Simula la descarga de un cliente según plataforma, idioma, propiedad y versión instalada.",
         points: [
           "Elige plataforma, idioma y depots que posee.",
           "Observa el tamaño de actualización por depot y el contenido compartido reutilizado.",
@@ -574,7 +574,7 @@ export const SECTION_TEXT: Record<string, Bi> = {
       tagline: "Publish a static export and update clients with no server.",
       help: {
         summary:
-          "Export a release as an immutable static tree (packs + manifest + chunk-map) for S3/R2/Pages/nginx, then update players straight from it with no cavs-server — via concurrent HTTP Range requests.",
+          "Export a release as an immutable static tree (packs + manifest + chunk-map) for S3/R2/Pages/nginx, then update clients straight from it with no cavs-server — via concurrent HTTP Range requests.",
         points: [
           "Build the export command from your store and output folder.",
           "Upload the folder to any static host that honours HTTP Range.",
@@ -587,7 +587,7 @@ export const SECTION_TEXT: Record<string, Bi> = {
       tagline: "Publica un export estático y actualiza clientes sin servidor.",
       help: {
         summary:
-          "Exporta una release como un árbol estático inmutable (packs + manifest + chunk-map) para S3/R2/Pages/nginx, y actualiza a los jugadores directamente desde ahí sin cavs-server — con peticiones HTTP Range concurrentes.",
+          "Exporta una release como un árbol estático inmutable (packs + manifest + chunk-map) para S3/R2/Pages/nginx, y actualiza a los clientes directamente desde ahí sin cavs-server — con peticiones HTTP Range concurrentes.",
         points: [
           "Construye el comando de export desde tu store y carpeta de salida.",
           "Sube la carpeta a cualquier host estático que soporte HTTP Range.",

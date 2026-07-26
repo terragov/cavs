@@ -126,8 +126,8 @@ export const FIELD_HELP: Record<string, Bi> = {
     en: "The version associated with the release.",
   },
   profile: {
-    es: "Perfil de chunking (tamaño de bloque). Afecta cuánto se reutiliza entre versiones. FastCDC 16k minimiza los updates (−65% medido en juegos reales); Auto mide candidatos sobre los bytes reales. Mantén el perfil de la versión anterior para conservar la reutilización.",
-    en: "Chunking profile (block size). Affects how much is reused between versions. FastCDC 16k minimizes updates (−65% measured on real games); Auto measures candidates on the real bytes. Keep the previous version's profile to preserve reuse.",
+    es: "Perfil de chunking (tamaño de bloque). Afecta cuánto se reutiliza entre versiones. FastCDC 16k minimiza los updates (−65% medido en builds reales); Auto mide candidatos sobre los bytes reales. Mantén el perfil de la versión anterior para conservar la reutilización.",
+    en: "Chunking profile (block size). Affects how much is reused between versions. FastCDC 16k minimizes updates (−65% measured on real builds); Auto measures candidates on the real bytes. Keep the previous version's profile to preserve reuse.",
   },
   compression: {
     es: "Compresión del payload por chunk (zstd-<nivel> o ninguna). zstd-3 es el equilibrio por defecto; zstd-19 reduce ~9% más la descarga a cambio de más CPU al empaquetar (el cliente descomprime igual de rápido).",
