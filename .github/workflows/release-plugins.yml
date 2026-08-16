@@ -73,6 +73,7 @@ jobs:
           path: |
             *.tar.gz
             *.zip
+          retention-days: 7
 
   # ---- Godot plugin (pure GDScript; no natives) --------------------------
   godot-plugin:
@@ -99,6 +100,7 @@ jobs:
         with:
           name: plugin-godot
           path: game-engine-plugins/godot-plugin/dist/*.zip
+          retention-days: 7
 
   # ---- Unity plugin (bundles the native libs) ----------------------------
   unity-plugin:
@@ -137,6 +139,7 @@ jobs:
         with:
           name: plugin-unity
           path: game-engine-plugins/unity-plugin/dist/*.zip
+          retention-days: 7
 
   # ---- Unreal plugin (bundles the native libs) ---------------------------
   unreal-plugin:
@@ -174,6 +177,7 @@ jobs:
         with:
           name: plugin-unreal
           path: game-engine-plugins/unreal-plugin/dist/*.zip
+          retention-days: 7
 
   # ---- Publish all three to one GitHub Release ---------------------------
   publish:

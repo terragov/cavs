@@ -86,6 +86,7 @@ jobs:
             *.tar.gz
             *.zip
             cavs-lfs-agent-${{ matrix.target }}*
+          retention-days: 7
 
   sdk-native:
     name: sdk native ${{ matrix.target }}
@@ -145,6 +146,7 @@ jobs:
           path: |
             *.tar.gz
             *.zip
+          retention-days: 7
 
   release:
     name: publish release
