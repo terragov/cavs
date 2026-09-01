@@ -21,7 +21,8 @@ pub use envelope::{DecodeLimits, ObjectEnvelope, ENVELOPE_FORMAT_V1};
 pub use error::{ObjectError, Result};
 pub use id::{HashAlgorithm, ObjectId, ObjectKind, OBJECT_DOMAIN};
 pub use store::{
-    FsObjectStore, ObjectStore, StoreVerifyReport, StoredObject, VerifyResult, STORE_FORMAT_V1,
+    Durability, FsObjectStore, ObjectStore, StoreVerifyReport, StoredObject, VerifyResult,
+    STORE_FORMAT_V1,
 };
 pub use walk::{
     compute_missing, walk_reachable, GraphSource, HaveNothing, HaveSet, KindFilter, MissingPlan,

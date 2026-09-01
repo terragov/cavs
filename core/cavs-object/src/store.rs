@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::envelope::{DecodeLimits, ObjectEnvelope};
 use crate::error::{ObjectError, Result};
@@ -90,10 +91,38 @@ pub trait ObjectStore {
     fn verify_object(&self, id: &ObjectId) -> Result<VerifyResult>;
 }
 
+/// When an object's bytes are forced to the platter.
+///
+/// An object is named by its own hash, so a torn write is not silent
+/// corruption: the next read recomputes the hash, the object fails, and it is
+/// refetched or rewritten. That changes what durability has to buy. It does
+/// not have to make every object survive a power cut — it has to make sure
+/// that whatever *points* at an object is never published before the object
+/// itself is safe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Durability {
+    /// fsync on [`FsObjectStore::flush`], once for the whole batch. The
+    /// caller writes its objects, flushes, and only then publishes the
+    /// reference that names them.
+    #[default]
+    OnFlush,
+    /// fsync every object as it is written. Correct and slow: a transaction
+    /// touching a handful of tree pages pays a platter round trip per page,
+    /// which measures in tens of milliseconds where the work itself is
+    /// microseconds.
+    PerObject,
+    /// Never fsync. For a store that can be rebuilt from elsewhere — a cache,
+    /// a scratch import, a test.
+    Never,
+}
+
 /// A directory of objects.
 pub struct FsObjectStore {
     root: PathBuf,
     limits: DecodeLimits,
+    durability: Durability,
+    /// Objects written since the last flush, waiting to be made durable.
+    pending: Mutex<Vec<PathBuf>>,
 }
 
 impl FsObjectStore {
@@ -111,6 +140,8 @@ impl FsObjectStore {
         Ok(FsObjectStore {
             root,
             limits: DecodeLimits::DEFAULT,
+            durability: Durability::default(),
+            pending: Mutex::new(Vec::new()),
         })
     }
 
@@ -118,6 +149,54 @@ impl FsObjectStore {
     pub fn with_limits(mut self, limits: DecodeLimits) -> Self {
         self.limits = limits;
         self
+    }
+
+    pub fn with_durability(mut self, durability: Durability) -> Self {
+        self.durability = durability;
+        self
+    }
+
+    pub fn durability(&self) -> Durability {
+        self.durability
+    }
+
+    /// Make every object written since the last flush durable.
+    ///
+    /// Call this before publishing anything that references them. Returns how
+    /// many objects were forced.
+    pub fn flush(&self) -> Result<usize> {
+        let pending = {
+            let mut guard = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+            std::mem::take(&mut *guard)
+        };
+        if matches!(self.durability, Durability::Never) {
+            return Ok(0);
+        }
+        let mut directories: BTreeSet<PathBuf> = BTreeSet::new();
+        let mut forced = 0usize;
+        for path in &pending {
+            match fs::File::open(path) {
+                Ok(file) => {
+                    file.sync_all().map_err(io_err("sync object"))?;
+                    forced += 1;
+                }
+                // Gone since it was written — garbage collected, or another
+                // process pruned it. Nothing to force.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(io_err("open object for sync")(e)),
+            }
+            if let Some(parent) = path.parent() {
+                directories.insert(parent.to_path_buf());
+            }
+        }
+        // The names have to be durable too, or a surviving object could still
+        // be unreachable after a crash.
+        for directory in directories {
+            if let Ok(handle) = fs::File::open(&directory) {
+                let _ = handle.sync_all();
+            }
+        }
+        Ok(forced)
     }
 
     pub fn root(&self) -> &Path {
@@ -257,12 +336,20 @@ impl ObjectStore for FsObjectStore {
             f.write_all(&kind.tag().to_le_bytes())
                 .map_err(io_err("write object"))?;
             f.write_all(bytes).map_err(io_err("write object"))?;
-            // Durable before it is visible: a rename that beats the data to
-            // disk would publish an object that is not all there.
-            f.sync_all().map_err(io_err("sync object"))?;
+            if self.durability == Durability::PerObject {
+                f.sync_all().map_err(io_err("sync object"))?;
+            }
         }
         match fs::rename(&tmp, &path) {
-            Ok(()) => Ok(id),
+            Ok(()) => {
+                if self.durability == Durability::OnFlush {
+                    self.pending
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(path);
+                }
+                Ok(id)
+            }
             Err(e) => {
                 let _ = fs::remove_file(&tmp);
                 // A concurrent writer that got there first stored the same
@@ -514,6 +601,38 @@ mod tests {
 
     /// A crash between the temporary write and the rename leaves a stray file
     /// in tmp/, never a half-written object under its final name.
+    #[test]
+    fn flushing_forces_what_was_written() {
+        let (_dir, store) = store();
+        assert_eq!(store.durability(), Durability::OnFlush);
+        let a = store.put_object(ObjectKind::Tree, b"one").unwrap();
+        let b = store.put_object(ObjectKind::Tree, b"two").unwrap();
+        assert_eq!(store.flush().unwrap(), 2);
+        // A second flush has nothing left to force.
+        assert_eq!(store.flush().unwrap(), 0);
+        assert!(store.has_object(&a).unwrap());
+        assert!(store.has_object(&b).unwrap());
+    }
+
+    #[test]
+    fn flushing_tolerates_an_object_that_went_away() {
+        let (_dir, store) = store();
+        let id = store.put_object(ObjectKind::Tree, b"transient").unwrap();
+        assert!(store.remove_object(&id).unwrap());
+        assert_eq!(store.flush().unwrap(), 0);
+    }
+
+    #[test]
+    fn a_store_that_never_syncs_still_reads_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FsObjectStore::open(dir.path().join("objects"))
+            .unwrap()
+            .with_durability(Durability::Never);
+        let id = store.put_object(ObjectKind::Tree, b"scratch").unwrap();
+        assert_eq!(store.flush().unwrap(), 0);
+        assert_eq!(store.get_object(&id).unwrap().bytes, b"scratch");
+    }
+
     #[test]
     fn a_stray_temporary_is_not_an_object() {
         let (_dir, store) = store();
