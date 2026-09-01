@@ -230,19 +230,11 @@ pub fn estimate(
         .filter(|(r, _)| keep(r))
     {
         seen_paths.insert(rel.clone());
-        let data_len;
-        let hashes;
         let map = mmap(&abs)?;
-        match &map {
-            Some(m) => {
-                data_len = m.len();
-                hashes = fixed_hashes(m, chunk);
-            }
-            None => {
-                data_len = 0;
-                hashes = Vec::new();
-            }
-        }
+        let (data_len, hashes) = match &map {
+            Some(m) => (m.len(), fixed_hashes(m, chunk)),
+            None => (0, Vec::new()),
+        };
         new_total += data_len as u64;
         total_chunks += hashes.len() as u64;
 
