@@ -29,11 +29,23 @@
 //! payload_raw_len  u64          bytes once decompressed
 //! payload          the objects, back to back
 //! signatures       count, then (key id, 64-byte signature) each
-//! footer           blake3 over everything above, then the magic again
+//! footer           content_len u64
+//!                  content checksum, blake3 over everything before the
+//!                                    signature block — this is what a
+//!                                    signature signs
+//!                  file checksum, blake3 over everything before itself
+//!                  the magic again
 //! ```
 //!
 //! The trailing magic is what makes truncation loud: a file that stops early
 //! does not end where a bundle ends.
+//!
+//! There are two checksums because a signature cannot cover itself. The
+//! content checksum stops at the signature block, so signing a bundle does not
+//! change what its signatures are over — which is what lets a second signer add
+//! theirs to a bundle the first one already signed. The file checksum covers
+//! everything including the signatures, so nothing in the file can be edited
+//! unnoticed.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -267,12 +279,13 @@ where
     body.extend_from_slice(&raw_len.to_le_bytes());
     body.extend_from_slice(&stored_payload);
 
-    // No signatures yet; a signer appends them and rewrites the footer.
-    write_varuint(0, &mut body);
+    let content_len = body.len() as u64;
+    let content_checksum = cavs_hash::hash_chunk(&body);
 
-    let checksum = cavs_hash::hash_chunk(&body);
-    body.extend_from_slice(&checksum);
-    body.extend_from_slice(BUNDLE_MAGIC);
+    // No signatures yet; a signer appends them and rewrites the footer,
+    // leaving the content checksum — and so every existing signature — alone.
+    write_varuint(0, &mut body);
+    seal(&mut body, content_len, &content_checksum);
 
     write_atomically(out, &body)?;
 
@@ -290,6 +303,55 @@ struct OpenBundle {
     info: BundleInfo,
     table: Vec<(ObjectKind, ObjectId, u64, u64)>,
     payload: Vec<u8>,
+    content_checksum: [u8; 32],
+}
+
+/// content_len, content checksum, file checksum, magic.
+const FOOTER_LEN: usize = 8 + 32 + 32 + 8;
+
+/// Close a bundle: write the footer over whatever body it has now.
+fn seal(body: &mut Vec<u8>, content_len: u64, content_checksum: &[u8; 32]) {
+    body.extend_from_slice(&content_len.to_le_bytes());
+    body.extend_from_slice(content_checksum);
+    let file_checksum = cavs_hash::hash_chunk(body);
+    body.extend_from_slice(&file_checksum);
+    body.extend_from_slice(BUNDLE_MAGIC);
+}
+
+/// The bytes a signature over this bundle covers.
+pub fn bundle_content_checksum(path: &Path, limits: &BundleLimits) -> Result<[u8; 32]> {
+    Ok(open(path, limits)?.content_checksum)
+}
+
+/// Add a signature to a bundle that is already written.
+///
+/// The content checksum stops before the signature block, so adding one does
+/// not disturb any signature already there: a bundle can collect signatures
+/// from several publishers without any of them having to re-sign.
+pub fn append_signature(path: &Path, signature: Signature, limits: &BundleLimits) -> Result<()> {
+    let raw = fs::read(path).map_err(io_err("read bundle"))?;
+    // Reading it back through the front door is the point: a bundle that no
+    // longer verifies is not one to sign.
+    let opened = open_bytes(&raw, limits)?;
+    let footer_at = raw.len() - FOOTER_LEN;
+    let content_len =
+        u64::from_le_bytes(raw[footer_at..footer_at + 8].try_into().expect("8 bytes"));
+
+    let mut body = raw[..content_len as usize].to_vec();
+    let mut signatures = opened.info.signatures;
+    if signatures.iter().any(|s| s.key_id == signature.key_id) {
+        return Err(ObjectError::Corrupt(
+            "this bundle already carries a signature from that key".into(),
+        ));
+    }
+    signatures.push(signature);
+    write_varuint(signatures.len() as u64, &mut body);
+    for signature in &signatures {
+        body.extend_from_slice(&signature.key_id);
+        body.extend_from_slice(&signature.bytes);
+    }
+    seal(&mut body, content_len, &opened.content_checksum);
+    write_atomically(path, &body)
 }
 
 fn open(path: &Path, limits: &BundleLimits) -> Result<OpenBundle> {
@@ -300,7 +362,6 @@ fn open(path: &Path, limits: &BundleLimits) -> Result<OpenBundle> {
 fn open_bytes(raw: &[u8], limits: &BundleLimits) -> Result<OpenBundle> {
     // The footer first. Everything else is only worth reading if the file
     // says it is whole, and the trailing magic is what a truncation removes.
-    const FOOTER_LEN: usize = 32 + 8;
     if raw.len() < BUNDLE_MAGIC.len() + FOOTER_LEN {
         return Err(ObjectError::Truncated("bundle"));
     }
@@ -310,15 +371,29 @@ fn open_bytes(raw: &[u8], limits: &BundleLimits) -> Result<OpenBundle> {
         ));
     }
     let (body, footer) = raw.split_at(raw.len() - FOOTER_LEN);
-    if &footer[32..] != BUNDLE_MAGIC {
+    if &footer[FOOTER_LEN - 8..] != BUNDLE_MAGIC {
         return Err(ObjectError::Corrupt(
             "bundle does not end where a bundle ends; it is truncated or damaged".into(),
         ));
     }
-    let actual = cavs_hash::hash_chunk(body);
-    if actual != footer[..32] {
+    // The file checksum covers everything before itself, signatures included.
+    let signed_region = &raw[..raw.len() - 40];
+    if cavs_hash::hash_chunk(signed_region) != footer[40..72] {
         return Err(ObjectError::Corrupt(
             "bundle checksum does not match its contents".into(),
+        ));
+    }
+    let content_len = u64::from_le_bytes(footer[..8].try_into().expect("8 bytes"));
+    let mut content_checksum = [0u8; 32];
+    content_checksum.copy_from_slice(&footer[8..40]);
+    if content_len as usize > body.len() {
+        return Err(ObjectError::Corrupt(
+            "bundle says its signed region runs past its own end".into(),
+        ));
+    }
+    if cavs_hash::hash_chunk(&body[..content_len as usize]) != content_checksum {
+        return Err(ObjectError::Corrupt(
+            "bundle content checksum does not match what the signatures cover".into(),
         ));
     }
 
@@ -442,6 +517,7 @@ fn open_bytes(raw: &[u8], limits: &BundleLimits) -> Result<OpenBundle> {
     }
 
     Ok(OpenBundle {
+        content_checksum,
         info: BundleInfo {
             format_version,
             compressed: flags & FLAG_ZSTD != 0,

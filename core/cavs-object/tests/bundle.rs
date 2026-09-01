@@ -429,3 +429,152 @@ fn a_file_that_is_not_a_bundle_is_told_so() {
     let err = inspect_bundle(&out, &BundleLimits::default()).unwrap_err();
     assert!(err.to_string().contains("bundle"), "{err}");
 }
+
+#[test]
+fn a_bundle_can_be_signed_after_it_is_written() {
+    use cavs_object::{
+        append_signature, bundle_content_checksum, sign_bundle_checksum, verify_signatures, KeyRing,
+    };
+    use ed25519_dalek::SigningKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("repo.cavsbundle");
+    let (store, root) = build(&dir.path().join("objects"), 8);
+    create_bundle(
+        &store,
+        &[(ObjectKind::Commit, root)],
+        &out,
+        &BundleOptions::default(),
+    )
+    .unwrap();
+
+    let publisher = SigningKey::from_bytes(&[7u8; 32]);
+    let checksum = bundle_content_checksum(&out, &BundleLimits::default()).unwrap();
+    append_signature(
+        &out,
+        sign_bundle_checksum(&publisher, &checksum),
+        &BundleLimits::default(),
+    )
+    .unwrap();
+
+    // Still a valid bundle, and still imports.
+    let info = inspect_bundle(&out, &BundleLimits::default()).unwrap();
+    assert_eq!(info.signatures.len(), 1);
+    assert!(verify_bundle(&out, &BundleLimits::default())
+        .unwrap()
+        .is_complete());
+
+    let mut ring = KeyRing::new();
+    ring.trust(publisher.verifying_key());
+    let check = verify_signatures(
+        &cavs_object::sign::bundle_message(&checksum),
+        &info.signatures,
+        &ring,
+    );
+    assert!(check.is_trusted());
+}
+
+/// A second publisher signing must not invalidate the first one's signature:
+/// the checksum they both sign stops before the signature block.
+#[test]
+fn two_publishers_can_sign_one_bundle() {
+    use cavs_object::{
+        append_signature, bundle_content_checksum, sign_bundle_checksum, verify_signatures, KeyRing,
+    };
+    use ed25519_dalek::SigningKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("repo.cavsbundle");
+    let (store, root) = build(&dir.path().join("objects"), 4);
+    create_bundle(
+        &store,
+        &[(ObjectKind::Commit, root)],
+        &out,
+        &BundleOptions::default(),
+    )
+    .unwrap();
+
+    let checksum = bundle_content_checksum(&out, &BundleLimits::default()).unwrap();
+    let mut ring = KeyRing::new();
+    for seed in [1u8, 2] {
+        let key = SigningKey::from_bytes(&[seed; 32]);
+        ring.trust(key.verifying_key());
+        append_signature(
+            &out,
+            sign_bundle_checksum(&key, &checksum),
+            &BundleLimits::default(),
+        )
+        .unwrap();
+    }
+
+    // The checksum did not move under them.
+    assert_eq!(
+        bundle_content_checksum(&out, &BundleLimits::default()).unwrap(),
+        checksum
+    );
+    let info = inspect_bundle(&out, &BundleLimits::default()).unwrap();
+    assert_eq!(info.signatures.len(), 2);
+    let check = verify_signatures(
+        &cavs_object::sign::bundle_message(&checksum),
+        &info.signatures,
+        &ring,
+    );
+    assert_eq!(check.accepted.len(), 2);
+    assert!(check.is_trusted());
+}
+
+/// A signature says who published the bundle. It does not make a damaged one
+/// acceptable.
+#[test]
+fn a_signature_does_not_rescue_an_altered_bundle() {
+    use cavs_object::{append_signature, bundle_content_checksum, sign_bundle_checksum};
+    use ed25519_dalek::SigningKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("repo.cavsbundle");
+    let (store, root) = build(&dir.path().join("objects"), 4);
+    create_bundle(
+        &store,
+        &[(ObjectKind::Commit, root)],
+        &out,
+        &BundleOptions::default(),
+    )
+    .unwrap();
+    let checksum = bundle_content_checksum(&out, &BundleLimits::default()).unwrap();
+    let key = SigningKey::from_bytes(&[5u8; 32]);
+    append_signature(
+        &out,
+        sign_bundle_checksum(&key, &checksum),
+        &BundleLimits::default(),
+    )
+    .unwrap();
+
+    let mut raw = std::fs::read(&out).unwrap();
+    let middle = raw.len() / 2;
+    raw[middle] ^= 0x01;
+    std::fs::write(&out, &raw).unwrap();
+
+    assert!(verify_bundle(&out, &BundleLimits::default()).is_err());
+}
+
+#[test]
+fn one_key_cannot_sign_the_same_bundle_twice() {
+    use cavs_object::{append_signature, bundle_content_checksum, sign_bundle_checksum};
+    use ed25519_dalek::SigningKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("repo.cavsbundle");
+    let (store, root) = build(&dir.path().join("objects"), 2);
+    create_bundle(
+        &store,
+        &[(ObjectKind::Commit, root)],
+        &out,
+        &BundleOptions::default(),
+    )
+    .unwrap();
+    let checksum = bundle_content_checksum(&out, &BundleLimits::default()).unwrap();
+    let key = SigningKey::from_bytes(&[6u8; 32]);
+    let signature = sign_bundle_checksum(&key, &checksum);
+    append_signature(&out, signature.clone(), &BundleLimits::default()).unwrap();
+    assert!(append_signature(&out, signature, &BundleLimits::default()).is_err());
+}

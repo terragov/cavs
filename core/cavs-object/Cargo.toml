@@ -15,6 +15,7 @@ categories = ["data-structures", "encoding"]
 cavs-hash = { workspace = true }
 thiserror = { workspace = true }
 zstd = { workspace = true }
+ed25519-dalek = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -15,19 +15,24 @@ pub mod envelope;
 pub mod error;
 pub mod gc;
 pub mod id;
+pub mod sign;
 pub mod store;
 mod varint;
 pub mod walk;
 
 pub use bundle::{
-    create_bundle, import_bundle, inspect_bundle, verify_bundle, BundleInfo, BundleLimits,
-    BundleOptions, BundleRef, BundleSummary, BundleVerification, ImportReport, Signature,
-    BUNDLE_FORMAT_V1, BUNDLE_MAGIC,
+    append_signature, bundle_content_checksum, create_bundle, import_bundle, inspect_bundle,
+    verify_bundle, BundleInfo, BundleLimits, BundleOptions, BundleRef, BundleSummary,
+    BundleVerification, ImportReport, Signature, BUNDLE_FORMAT_V1, BUNDLE_MAGIC,
 };
 pub use envelope::{DecodeLimits, ObjectEnvelope, ENVELOPE_FORMAT_V1};
 pub use error::{ObjectError, Result};
 pub use gc::{collect, unreachable_objects, GcOptions, GcReport};
 pub use id::{HashAlgorithm, ObjectId, ObjectKind, OBJECT_DOMAIN};
+pub use sign::{
+    key_id, sign_bundle_checksum, sign_root, verify_root, verify_signatures, KeyId, KeyRing,
+    SignatureCheck, BUNDLE_DOMAIN, ROOT_DOMAIN,
+};
 pub use store::{
     Durability, FsObjectStore, ObjectStore, StoreVerifyReport, StoredObject, VerifyResult,
     STORE_FORMAT_V1,
