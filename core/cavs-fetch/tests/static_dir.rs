@@ -83,7 +83,7 @@ fn build_tree(dir: &std::path::Path) -> Vec<u8> {
         "merkle_root": "",
         "signature": null,
         "signer_pubkey": null,
-        "meta": [["payload", "raw"], [format!("sha256:payload.bin"), sha]],
+        "meta": [["payload", "raw"], ["sha256:payload.bin", sha]],
     });
     std::fs::create_dir_all(dir.join("assets/app")).unwrap();
     std::fs::write(

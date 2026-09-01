@@ -287,7 +287,7 @@ pub fn read_pack_index(path: &Path) -> Result<(ChunkHash, Vec<PackEntry>)> {
         return Err(corrupt("index entry count mismatch"));
     }
     let mut entries = Vec::with_capacity(count);
-    for e in entries_bytes.chunks_exact(INDEX_ENTRY_LEN) {
+    for e in entries_bytes.as_chunks::<INDEX_ENTRY_LEN>().0 {
         entries.push(PackEntry {
             hash: e[..32].try_into().unwrap(),
             offset: u64::from_le_bytes(e[32..40].try_into().unwrap()),
