@@ -51,6 +51,11 @@ pub struct Capabilities {
     pub max_roots: usize,
     /// Largest number of objects one response will carry.
     pub max_objects_per_response: usize,
+    /// Above this many objects, a have-set travels as a filter rather than a
+    /// list. Negotiated rather than fixed, because the right answer depends on
+    /// what the link costs and how much memory each side will spend on a list
+    /// it did not ask for.
+    pub max_exact_have: usize,
 }
 
 impl Default for Capabilities {
@@ -64,6 +69,7 @@ impl Default for Capabilities {
             resumable: true,
             max_roots: 1024,
             max_objects_per_response: 100_000,
+            max_exact_have: 4096,
         }
     }
 }
@@ -104,6 +110,7 @@ impl Capabilities {
             max_objects_per_response: self
                 .max_objects_per_response
                 .min(other.max_objects_per_response),
+            max_exact_have: self.max_exact_have.min(other.max_exact_have),
         })
     }
 }
@@ -122,6 +129,7 @@ pub struct Agreement {
     pub resumable: bool,
     pub max_roots: usize,
     pub max_objects_per_response: usize,
+    pub max_exact_have: usize,
 }
 
 /// How a receiver describes what it already holds.
@@ -372,12 +380,14 @@ mod tests {
         let strict = Capabilities {
             max_roots: 8,
             max_objects_per_response: 100,
+            max_exact_have: 32,
             resumable: false,
             ..Default::default()
         };
         let agreement = Capabilities::default().agree(&strict).unwrap();
         assert_eq!(agreement.max_roots, 8);
         assert_eq!(agreement.max_objects_per_response, 100);
+        assert_eq!(agreement.max_exact_have, 32);
         assert!(!agreement.resumable);
     }
 

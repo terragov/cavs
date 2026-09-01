@@ -267,6 +267,28 @@ impl FsObjectStore {
         Ok(report)
     }
 
+    /// The promise log for this store.
+    pub fn promises(&self) -> Result<crate::promise::Promises> {
+        crate::promise::Promises::open(&self.root)
+    }
+
+    /// What this store can say about an object: here, promised, or missing.
+    ///
+    /// The distinction is the whole point. A metadata-only clone is full of
+    /// objects that are not here, and calling that corruption would make every
+    /// such clone permanently unhealthy.
+    pub fn presence(&self, id: &ObjectId) -> Result<crate::promise::ObjectPresence> {
+        if self.has_object(id)? {
+            return Ok(crate::promise::ObjectPresence::Local);
+        }
+        match self.promises()?.read()?.remote_for(id) {
+            Some(remote) => Ok(crate::promise::ObjectPresence::Promised {
+                remote: remote.to_string(),
+            }),
+            None => Ok(crate::promise::ObjectPresence::Missing),
+        }
+    }
+
     /// When an object was written, or `None` when the platform does not say.
     ///
     /// Used by collection to keep anything young: an object written a moment
