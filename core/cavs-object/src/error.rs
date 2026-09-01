@@ -55,6 +55,18 @@ pub enum ObjectError {
     #[error("{0}")]
     Corrupt(String),
 
+    #[error("the object graph contains a cycle through {0}")]
+    CycleDetected(String),
+
+    #[error("walk exceeded its budget of {limit} {what}")]
+    WalkBudget { what: &'static str, limit: u64 },
+
+    #[error("walk was cancelled")]
+    WalkCancelled,
+
+    #[error("walk ran past its deadline")]
+    WalkDeadlineExceeded,
+
     #[error("failed to {what}: {source}")]
     Io {
         what: &'static str,

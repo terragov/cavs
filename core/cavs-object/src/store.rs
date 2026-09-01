@@ -12,12 +12,13 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::envelope::{DecodeLimits, ObjectEnvelope};
 use crate::error::{ObjectError, Result};
 use crate::id::{ObjectId, ObjectKind};
+use crate::walk::{GraphSource, ObjectNode};
 
 /// Magic at the head of every loose object file.
 pub const LOOSE_MAGIC: &[u8; 8] = b"CAVSOBJ\x01";
@@ -225,11 +226,12 @@ impl FsObjectStore {
 
 impl ObjectStore for FsObjectStore {
     fn put_object(&self, kind: ObjectKind, bytes: &[u8]) -> Result<ObjectId> {
-        if bytes.len() > self.limits.max_encoded_len {
+        let max = self.limits.max_len_for(kind);
+        if bytes.len() > max {
             return Err(ObjectError::TooLarge {
                 what: "object",
                 len: bytes.len(),
-                max: self.limits.max_encoded_len,
+                max,
             });
         }
         let id = ObjectId::compute(kind, bytes);
@@ -308,6 +310,59 @@ impl ObjectStore for FsObjectStore {
             stored_len: object.bytes.len(),
             dependencies: envelope.dependencies.len(),
         })
+    }
+}
+
+/// Answering graph questions straight off the filesystem.
+///
+/// A payload object is resolved from its 14-byte header and the file's size:
+/// a chunk has no dependencies by construction, so reading megabytes of it to
+/// learn that would be waste. Only a structural object is read in full, and
+/// only structural objects are ever large in count rather than in bytes.
+impl GraphSource for FsObjectStore {
+    fn lookup(&self, id: &ObjectId) -> Result<Option<ObjectNode>> {
+        let path = self.loose_path(id);
+        let mut file = match fs::File::open(&path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(io_err("open object")(e)),
+        };
+        let stored_len = file
+            .metadata()
+            .map_err(io_err("stat object"))?
+            .len()
+            .saturating_sub(LOOSE_HEADER_LEN as u64);
+
+        let mut header = [0u8; LOOSE_HEADER_LEN];
+        file.read_exact(&mut header)
+            .map_err(|_| ObjectError::Truncated("loose object header"))?;
+        if &header[..8] != LOOSE_MAGIC {
+            return Err(ObjectError::Corrupt(format!(
+                "object {id} has a bad file header"
+            )));
+        }
+        let version = u16::from_le_bytes([header[8], header[9]]);
+        if version != STORE_FORMAT_V1 {
+            return Err(ObjectError::UnsupportedFormat(version));
+        }
+        let tag = u32::from_le_bytes([header[10], header[11], header[12], header[13]]);
+        let kind = ObjectKind::from_tag(tag).ok_or(ObjectError::UnknownKind(tag))?;
+
+        let dependencies = if kind.is_payload() {
+            Vec::new()
+        } else {
+            let mut bytes = Vec::with_capacity(stored_len as usize);
+            file.read_to_end(&mut bytes)
+                .map_err(io_err("read object"))?;
+            ObjectEnvelope::decode(kind, &bytes, self.limits)?.dependencies
+        };
+
+        Ok(Some(ObjectNode {
+            id: *id,
+            kind,
+            stored_len,
+            dependencies,
+        }))
     }
 }
 

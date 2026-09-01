@@ -31,32 +31,44 @@ pub const ENVELOPE_FORMAT_V1: u16 = 1;
 
 /// Ceilings applied before a single byte is allocated, so a hostile object
 /// cannot turn a length field into an out-of-memory abort.
+///
+/// Structural objects and payload are bounded separately. A tree page or a
+/// commit is kilobytes and a fan-out of a million is already absurd; a chunk
+/// is legitimately megabytes and has no fan-out at all. One number for both
+/// would have to be the larger, which is no limit on the class that needs one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecodeLimits {
-    /// Largest accepted encoded object.
+    /// Largest accepted structural object, envelope included.
     pub max_encoded_len: usize,
-    /// Largest accepted body.
+    /// Largest accepted structural body.
     pub max_body_len: usize,
     /// Largest accepted dependency count.
     pub max_dependencies: usize,
+    /// Largest accepted payload object.
+    pub max_payload_len: usize,
 }
 
 impl DecodeLimits {
-    /// Defaults sized for structural objects: a tree page or commit is
-    /// kilobytes, not gigabytes.
     pub const DEFAULT: DecodeLimits = DecodeLimits {
         max_encoded_len: 64 * 1024 * 1024,
         max_body_len: 64 * 1024 * 1024,
         max_dependencies: 1 << 20,
+        max_payload_len: 1 << 30,
     };
 
-    /// Limits wide enough for payload chunks, which legitimately reach the
-    /// store's maximum chunk size.
-    pub const PAYLOAD: DecodeLimits = DecodeLimits {
-        max_encoded_len: 1 << 30,
-        max_body_len: 1 << 30,
-        max_dependencies: 0,
-    };
+    pub const fn with_max_payload_len(mut self, max: usize) -> Self {
+        self.max_payload_len = max;
+        self
+    }
+
+    /// The ceiling that applies to an object of this class.
+    pub const fn max_len_for(&self, kind: ObjectKind) -> usize {
+        if kind.is_payload() {
+            self.max_payload_len
+        } else {
+            self.max_encoded_len
+        }
+    }
 }
 
 impl Default for DecodeLimits {
@@ -135,21 +147,15 @@ impl ObjectEnvelope {
     /// hashed into the id: an object read under the wrong class simply fails
     /// its id check.
     pub fn decode(kind: ObjectKind, bytes: &[u8], limits: DecodeLimits) -> Result<Self> {
-        if bytes.len() > limits.max_encoded_len {
+        let max = limits.max_len_for(kind);
+        if bytes.len() > max {
             return Err(ObjectError::TooLarge {
                 what: "object",
                 len: bytes.len(),
-                max: limits.max_encoded_len,
+                max,
             });
         }
         if kind.is_payload() {
-            if bytes.len() > limits.max_body_len {
-                return Err(ObjectError::TooLarge {
-                    what: "body",
-                    len: bytes.len(),
-                    max: limits.max_body_len,
-                });
-            }
             return Ok(ObjectEnvelope {
                 format_version: ENVELOPE_FORMAT_V1,
                 kind,
