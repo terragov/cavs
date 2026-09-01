@@ -267,6 +267,19 @@ impl FsObjectStore {
         Ok(report)
     }
 
+    /// When an object was written, or `None` when the platform does not say.
+    ///
+    /// Used by collection to keep anything young: an object written a moment
+    /// ago may belong to a transaction that has not published its reference
+    /// yet, and to a mark-and-sweep that is indistinguishable from garbage.
+    pub fn object_written_at(&self, id: &ObjectId) -> Result<Option<std::time::SystemTime>> {
+        match fs::metadata(self.loose_path(id)) {
+            Ok(metadata) => Ok(metadata.modified().ok()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(io_err("stat object")(e)),
+        }
+    }
+
     /// Delete an object. Returns whether it was there.
     pub fn remove_object(&self, id: &ObjectId) -> Result<bool> {
         let path = self.loose_path(id);
