@@ -15,6 +15,7 @@ pub mod envelope;
 pub mod error;
 pub mod gc;
 pub mod id;
+pub mod negotiate;
 pub mod sign;
 pub mod store;
 mod varint;
@@ -29,6 +30,9 @@ pub use envelope::{DecodeLimits, ObjectEnvelope, ENVELOPE_FORMAT_V1};
 pub use error::{ObjectError, Result};
 pub use gc::{collect, unreachable_objects, GcOptions, GcReport};
 pub use id::{HashAlgorithm, ObjectId, ObjectKind, OBJECT_DOMAIN};
+pub use negotiate::{
+    bloom_of, Agreement, BloomHaveSet, Capabilities, HaveForm, HaveSummary, PROTOCOL_V2,
+};
 pub use sign::{
     key_id, sign_bundle_checksum, sign_root, verify_root, verify_signatures, KeyId, KeyRing,
     SignatureCheck, BUNDLE_DOMAIN, ROOT_DOMAIN,
