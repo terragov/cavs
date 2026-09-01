@@ -88,7 +88,7 @@ impl KindFilter {
 }
 
 /// Ceilings and stop conditions for one walk.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WalkOptions {
     pub max_depth: u32,
     pub max_dependencies_per_object: usize,

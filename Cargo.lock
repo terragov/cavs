@@ -453,6 +453,7 @@ dependencies = [
  "cavs-hash",
  "tempfile",
  "thiserror",
+ "zstd",
 ]
 
 [[package]]
