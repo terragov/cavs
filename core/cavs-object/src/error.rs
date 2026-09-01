@@ -48,4 +48,17 @@ pub enum ObjectError {
 
     #[error("object id mismatch: expected {expected}, computed {actual}")]
     IdMismatch { expected: String, actual: String },
+
+    #[error("object {0} is not in this store")]
+    NotFound(String),
+
+    #[error("{0}")]
+    Corrupt(String),
+
+    #[error("failed to {what}: {source}")]
+    Io {
+        what: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
 }

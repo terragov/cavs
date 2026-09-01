@@ -14,3 +14,6 @@ categories = ["data-structures", "encoding"]
 [dependencies]
 cavs-hash = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
