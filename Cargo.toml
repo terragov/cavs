@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "core/cavs-hash",
+    "core/cavs-object",
     "core/cavs-chunker",
     "core/cavs-store",
     "core/cavs-format",
@@ -36,6 +37,7 @@ homepage = "https://github.com/orelvis15/cavs-oss"
 
 [workspace.dependencies]
 cavs-hash = { path = "core/cavs-hash", version = "1.2.0" }
+cavs-object = { path = "core/cavs-object", version = "1.2.0" }
 cavs-chunker = { path = "core/cavs-chunker", version = "1.2.0" }
 cavs-format = { path = "core/cavs-format", version = "1.2.0" }
 cavs-manifest = { path = "core/cavs-manifest", version = "1.2.0" }

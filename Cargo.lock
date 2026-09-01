@@ -447,6 +447,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cavs-object"
+version = "1.7.0"
+dependencies = [
+ "cavs-hash",
+ "thiserror",
+]
+
+[[package]]
 name = "cavs-plan"
 version = "1.7.0"
 dependencies = [

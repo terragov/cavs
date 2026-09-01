@@ -1,0 +1,16 @@
+[package]
+name = "cavs-object"
+description = "Content-addressed structural objects for CAVS: canonical envelopes, domain-separated identity and dependency graphs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["cavs", "content-addressable", "merkle", "dag", "blake3"]
+categories = ["data-structures", "encoding"]
+
+[dependencies]
+cavs-hash = { workspace = true }
+thiserror = { workspace = true }
