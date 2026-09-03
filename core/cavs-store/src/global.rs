@@ -44,6 +44,7 @@
 
 use crate::packfile::{self, PackWriter, PREFERRED_PACK_SIZE};
 use crate::segindex;
+use crate::sync::{sync_file, SyncMode};
 use cavs_hash::{from_hex, to_hex, ChunkHash};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -324,6 +325,8 @@ pub struct GlobalStore {
     snapshot_bytes: u64,
     /// Overrides the journal budget; see [`Self::set_journal_budget`].
     journal_budget: Option<u64>,
+    /// What every sync point waits for; see [`Self::set_sync_mode`].
+    sync_mode: SyncMode,
 }
 
 impl GlobalStore {
@@ -375,6 +378,7 @@ impl GlobalStore {
                 journal_bytes: 0,
                 snapshot_bytes: 0,
                 journal_budget: None,
+                sync_mode: SyncMode::Full,
             };
             store.restore_quarantined_packs()?;
             return Ok(store);
@@ -463,6 +467,7 @@ impl GlobalStore {
             journal_bytes,
             snapshot_bytes,
             journal_budget: None,
+            sync_mode: SyncMode::Full,
         };
         // A ledger recovered from a previous generation may reference packs
         // a newer GC had already quarantined; bring them back.
@@ -875,6 +880,20 @@ impl GlobalStore {
             .unwrap_or_else(|| self.snapshot_bytes.max(JOURNAL_MIN_BYTES))
     }
 
+    /// What the store's sync points — the packfile, the record pack, the
+    /// ledger journal and snapshot — wait for before a publish reports
+    /// success. `Full` unless the caller says otherwise: the store does not
+    /// know what it is asked to hold. See [`SyncMode`] for what each mode
+    /// gives up; the write *order* (chunks before the ledger that names them)
+    /// is kept in every mode.
+    pub fn set_sync_mode(&mut self, mode: SyncMode) {
+        self.sync_mode = mode;
+    }
+
+    pub fn sync_mode(&self) -> SyncMode {
+        self.sync_mode
+    }
+
     fn chunk_path(&self, hex: &str) -> PathBuf {
         self.root.join("chunks").join(&hex[..2]).join(hex)
     }
@@ -1072,7 +1091,7 @@ impl GlobalStore {
             writer.abort();
             return Ok(());
         }
-        let (pack_hex, entries) = writer.finish()?;
+        let (pack_hex, entries) = writer.finish_with(self.sync_mode)?;
         for entry in entries {
             let hex = to_hex(&entry.hash);
             let resolved = self.chunk_update(&hex, |info| {
@@ -1285,7 +1304,7 @@ impl GlobalStore {
         // would otherwise find the stale one. A store past that point skips
         // the unlink per asset.
         let flat_records_remain = self.index.assets.len() > self.index.records.len();
-        for (name, at) in write_record_pack(&self.root, records)? {
+        for (name, at) in write_record_pack(&self.root, records, self.sync_mode)? {
             if flat_records_remain {
                 let flat = self.root.join("assets").join(format!("{name}.json"));
                 let _ = std::fs::remove_file(flat);
@@ -2184,7 +2203,9 @@ impl GlobalStore {
             .append(true)
             .create(true)
             .open(&path)?;
-        let written = f.write_all(record).and_then(|_| f.sync_all());
+        let written = f
+            .write_all(record)
+            .and_then(|_| sync_file(&f, self.sync_mode));
         if let Err(e) = written {
             // A partial record would stop every later replay at this
             // offset; cut back to the last record boundary before failing.
@@ -2193,7 +2214,7 @@ impl GlobalStore {
         }
         if created {
             if let Ok(dir) = std::fs::File::open(&self.root) {
-                let _ = dir.sync_all();
+                let _ = sync_file(&dir, self.sync_mode);
             }
         }
         Ok(())
@@ -2212,7 +2233,7 @@ impl GlobalStore {
             use std::io::Write as _;
             let mut f = std::fs::File::create(&tmp)?;
             f.write_all(&encoded)?;
-            f.sync_all()?;
+            sync_file(&f, self.sync_mode)?;
         }
         // Read back what the filesystem actually holds and check the seal:
         // a truncated or bit-flipped staging write must fail here, not at
@@ -2240,7 +2261,7 @@ impl GlobalStore {
         }
         // Make the renames durable before reporting success.
         if let Ok(dir) = std::fs::File::open(&self.root) {
-            let _ = dir.sync_all();
+            let _ = sync_file(&dir, self.sync_mode);
         }
         // A legacy pre-1.6 ledger is superseded by this save; leaving it
         // behind would resurrect stale state on a downgrade mid-history.
@@ -2288,7 +2309,11 @@ fn record_pack_path(root: &Path, pack: &[u8; 32]) -> PathBuf {
 /// once written and a batch published twice is one file. Synced before it is
 /// named: the ledger that points into it is synced right after, and a record
 /// the ledger names must be there to read.
-fn write_record_pack(root: &Path, records: &[AssetRecord]) -> Result<Vec<(String, RecordRef)>> {
+fn write_record_pack(
+    root: &Path,
+    records: &[AssetRecord],
+    mode: SyncMode,
+) -> Result<Vec<(String, RecordRef)>> {
     use std::io::Write as _;
     let mut bytes = Vec::new();
     let mut spans: Vec<(String, u32, u32)> = Vec::with_capacity(records.len());
@@ -2305,7 +2330,7 @@ fn write_record_pack(root: &Path, records: &[AssetRecord]) -> Result<Vec<(String
         {
             let mut f = std::fs::File::create(&tmp)?;
             f.write_all(&bytes)?;
-            f.sync_all()?;
+            sync_file(&f, mode)?;
         }
         std::fs::rename(&tmp, &path)?;
     }
@@ -3995,6 +4020,32 @@ mod tests {
             "the save was a snapshot"
         );
         assert!(store.index_report().snapshot_bytes > 0);
+    }
+
+    #[test]
+    fn every_sync_mode_publishes_and_reads_back() {
+        for mode in [SyncMode::Full, SyncMode::Fsync, SyncMode::Barrier] {
+            let dir = tempfile::tempdir().unwrap();
+            let body = vec![mode as u8 + 1; 700];
+            let hash = hash_chunk(&body);
+            {
+                let mut store =
+                    GlobalStore::open_with_layout(dir.path(), Some(StoreLayout::Packfiles))
+                        .unwrap();
+                store.set_sync_mode(mode);
+                assert_eq!(store.sync_mode(), mode);
+                store.begin_publish_batch();
+                store.put_chunk(&hash, &body, 0, 700).unwrap();
+                store.publish_asset(&rec("m", &[&hash])).unwrap();
+                store.commit_publish_batch().unwrap();
+                store.set_journal_budget(0);
+                store.publish_asset(&rec("n", &[&hash])).unwrap(); // a snapshot
+            }
+            let store = GlobalStore::open(dir.path()).unwrap();
+            assert!(store.has_asset("m") && store.has_asset("n"), "{mode:?}");
+            assert_eq!(store.read_chunk_stored(&hash).unwrap().0, body);
+            assert_eq!(store.get_asset("m").unwrap().name, "m");
+        }
     }
 
     #[test]

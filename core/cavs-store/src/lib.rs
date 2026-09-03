@@ -7,11 +7,13 @@
 mod global;
 pub mod packfile;
 mod segindex;
+pub mod sync;
 pub use global::{
     AssetRecord, ChunkInfo, ChunkLocation, CoalesceStats, FragmentationReport, GlobalStore,
     IndexReport, PackFragmentation, RepackOutcome, RepackPlan, Result, StoreError, StoreLayout,
     StoreSegment, StoreStats, StoreTrack, JOURNAL_MIN_BYTES,
 };
+pub use sync::SyncMode;
 
 use cavs_hash::ChunkHash;
 use std::collections::HashMap;

@@ -6,6 +6,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`cavs-store`: the caller chooses what a sync waits for.** `SyncMode`
+  (`Full` — `F_FULLFSYNC` on macOS, what Rust's `sync_all` does there;
+  `Fsync` — `fsync(2)`, what SQLite and PostgreSQL do by default; `Barrier`
+  — `F_BARRIERFSYNC`, ordering without a flush) and
+  `GlobalStore::set_sync_mode`, applied to the packfile, the record pack, the
+  ledger journal and snapshot and their directory syncs.
+  `PackWriter::finish_with` takes the mode; `finish` stays `Full`. The write
+  order — chunks before the ledger that names them — is kept in every mode.
+  The default is unchanged: `Full`.
+
 ### Changed
 
 - **`cavs-store`: a save costs what it changed, not what the store holds.**

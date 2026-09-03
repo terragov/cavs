@@ -13,6 +13,7 @@ categories = ["filesystem", "caching"]
 [dependencies]
 cavs-hash = { workspace = true }
 cavs-proto = { workspace = true }
+libc = "0.2"
 memmap2 = "0.9"
 serde = { workspace = true }
 serde_json = { workspace = true }
