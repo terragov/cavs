@@ -10,7 +10,7 @@ mod segindex;
 pub use global::{
     AssetRecord, ChunkInfo, ChunkLocation, CoalesceStats, FragmentationReport, GlobalStore,
     IndexReport, PackFragmentation, RepackOutcome, RepackPlan, Result, StoreError, StoreLayout,
-    StoreSegment, StoreStats, StoreTrack,
+    StoreSegment, StoreStats, StoreTrack, JOURNAL_MIN_BYTES,
 };
 
 use cavs_hash::ChunkHash;
