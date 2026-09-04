@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`cavs-store`: a save costs what it changed, not what the store holds.**
+  - The monolithic ledger no longer rewrites `index.bin` on every save. A
+    save appends one BLAKE3-sealed record of the entries it touched to
+    `index.log`, and the snapshot is rewritten only once the journal has
+    outgrown it (never below 1 MiB, see `JOURNAL_MIN_BYTES`;
+    `GlobalStore::set_journal_budget` overrides it, `0` restores a snapshot
+    per save). Open replays the journal over the snapshot; a torn or corrupt
+    tail is cut back to the last whole record, and a recovery from
+    `index.bin.prev` replays the journal that snapshot had rotated away
+    (`index.log.prev`). `IndexReport` gained `journal_bytes` and
+    `snapshot_bytes`; `store index-inspect` prints them.
+  - The records of a publish batch go into one content-addressed, immutable
+    file, `assets/records/<hex>.cavsrec`, and the ledger holds each asset's
+    byte range in it — one file and one fsync per publish instead of four
+    filesystem calls per asset in a directory holding every asset the store
+    has. `get_asset` and the exports read the range; flat `assets/<name>.json`
+    files from earlier publishes are still read, and are replaced in place by
+    a republish. `gc` deletes record packs no live asset points into. The
+    segmented index keeps flat records, and `index-migrate` writes them out
+    for every asset in a pack first.
+  - The snapshot format is v2 (record locations per asset); a 1.7 reader
+    rejects it rather than opening a snapshot and missing the saves its
+    journal holds. A v1 snapshot opens and its first save writes v2.
+  - The snapshot read-back after a rewrite checks the seal instead of
+    decoding the whole ledger.
+  - Measured with `cavsdb-bench commit-cost` (200 objects of 4 KiB per
+    transaction, 60,000 objects): commit p50 went from 63–66 ms at an empty
+    repository and 121–127 ms at 50,000 objects to 37 ms and 42 ms; the
+    ledger's share of a commit no longer grows with the repository.
+
 ## [1.7.0] — Round 3: metadata batching, segmented index, adaptive fetch
 
 ### Added

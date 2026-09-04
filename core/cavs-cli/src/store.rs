@@ -153,8 +153,10 @@ pub fn index_inspect(store_dir: &Path) -> Result<()> {
         );
     } else {
         println!(
-            "index   : monolithic index.bin · generation {} (run `store index-migrate` to segment)",
-            r.generation
+            "index   : monolithic index.bin · generation {} · {} snapshot + {} journal (run `store index-migrate` to segment)",
+            r.generation,
+            human_bytes(r.snapshot_bytes),
+            human_bytes(r.journal_bytes)
         );
     }
     print_stats(&store);

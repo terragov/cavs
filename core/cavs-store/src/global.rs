@@ -10,13 +10,27 @@
 //!   chunks/<ab>/<hex>        loose layout: one file per chunk, as stored
 //!   packs/<ab>/<id>.cavspack packfile layout: chunks appended into large
 //!   packs/<ab>/<id>.cavsindex  immutable packs + per-pack sidecar index
-//!   assets/<name>.json       per-asset record (tracks/segments by hash)
+//!   assets/<name>.json       per-asset record (tracks/segments by hash),
+//!                            for stores on the segmented index and for
+//!                            assets published before 1.8
+//!   assets/records/<id>.cavsrec  the records of one publish batch, back to
+//!                            back, content-addressed and immutable; the
+//!                            ledger says which bytes of which file are an
+//!                            asset's record. One file per commit rather
+//!                            than one per asset.
 //!   index.bin                chunk ledger: per chunk {sizes, flags,
 //!                            refcount, pack location}; plus the store
 //!                            layout. Compact binary snapshot (CAVSIDX1,
 //!                            BLAKE3-sealed); pre-1.6 stores used
 //!                            index.json, still read and migrated on the
 //!                            next save.
+//!   index.log                ledger journal: one BLAKE3-sealed record per
+//!                            save holding only the entries that save
+//!                            touched (CAVSIDL1). A save appends here and
+//!                            rewrites index.bin only once the journal has
+//!                            outgrown the snapshot it extends, so what a
+//!                            save costs is what it changed, not what the
+//!                            store holds. Replayed over index.bin on open.
 //! ```
 //! Chunks are stored in their *stored* (possibly compressed) form so the
 //! server can stream them to clients with zero recompression, exactly like
@@ -32,7 +46,7 @@ use crate::packfile::{self, PackWriter, PREFERRED_PACK_SIZE};
 use crate::segindex;
 use cavs_hash::{from_hex, to_hex, ChunkHash};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
@@ -158,6 +172,10 @@ struct Index {
     chunks: BTreeMap<String, ChunkInfo>,
     /// asset name -> distinct chunk hexes it references (refcount ledger).
     assets: BTreeMap<String, Vec<String>>,
+    /// asset name -> where its record lives, for assets published into a
+    /// record pack. An asset with no entry has a flat `assets/<name>.json`.
+    #[serde(default)]
+    records: BTreeMap<String, RecordRef>,
     /// Physical layout; absent in pre-0.4.0 stores (= loose).
     #[serde(default)]
     layout: StoreLayout,
@@ -165,6 +183,15 @@ struct Index {
     /// (`index.bin` vs `index.bin.prev`) is newer without trusting mtimes.
     #[serde(default)]
     generation: u64,
+}
+
+/// The bytes of one asset's record inside a record pack
+/// (`assets/records/<hex of pack>.cavsrec`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct RecordRef {
+    pack: [u8; 32],
+    offset: u32,
+    len: u32,
 }
 
 /// Structure of the ledger, for `store index-inspect`.
@@ -176,6 +203,12 @@ pub struct IndexReport {
     pub segments: usize,
     /// Delta segments awaiting compaction (segmented mode only).
     pub deltas: usize,
+    /// Bytes of the ledger journal (`index.log`) the next open will replay
+    /// over the snapshot (monolithic mode only).
+    pub journal_bytes: u64,
+    /// Bytes of the ledger snapshot (`index.bin`) the journal extends
+    /// (monolithic mode only).
+    pub snapshot_bytes: u64,
 }
 
 /// Per-pack fragmentation detail (Round 3D telemetry).
@@ -275,6 +308,22 @@ pub struct GlobalStore {
     /// `Some` while a publish batch is open (see
     /// [`Self::begin_publish_batch`]): asset records queued for the commit.
     batch: Option<Vec<AssetRecord>>,
+    /// Ledger entries touched since the last save (monolithic mode). A save
+    /// appends exactly these to the journal instead of rewriting the
+    /// snapshot; see [`Self::save_index`].
+    dirty_chunks: BTreeSet<String>,
+    dirty_assets: BTreeSet<String>,
+    /// Size of `index.log` as of the last save or open, and of the snapshot
+    /// it extends. A save compares the two to decide when the journal has
+    /// grown past what it is saving and a fresh snapshot is cheaper to
+    /// replay. `snapshot_bytes == 0` means there is no snapshot for a
+    /// journal to extend (a ledger loaded from a pre-1.6 `index.json` or a
+    /// v1 snapshot, or recovered from the previous generation), and the next
+    /// save writes one.
+    journal_bytes: u64,
+    snapshot_bytes: u64,
+    /// Overrides the journal budget; see [`Self::set_journal_budget`].
+    journal_budget: Option<u64>,
 }
 
 impl GlobalStore {
@@ -306,6 +355,7 @@ impl GlobalStore {
             let index = Index {
                 chunks: BTreeMap::new(), // unused in segmented mode
                 assets,
+                records: BTreeMap::new(), // the segmented index keeps flat records
                 layout: seg.layout,
                 generation: seg.generation,
             };
@@ -320,6 +370,11 @@ impl GlobalStore {
                 open_pack: None,
                 preferred_pack_size: PREFERRED_PACK_SIZE,
                 batch: None,
+                dirty_chunks: BTreeSet::new(),
+                dirty_assets: BTreeSet::new(),
+                journal_bytes: 0,
+                snapshot_bytes: 0,
+                journal_budget: None,
             };
             store.restore_quarantined_packs()?;
             return Ok(store);
@@ -331,21 +386,62 @@ impl GlobalStore {
         // A crash mid-save can leave a temp snapshot behind; the live ledger
         // was never touched, so it is safe to drop.
         let _ = std::fs::remove_file(bin_path.with_extension("bin.tmp"));
-        let index = match Self::load_ledger(&bin_path, &prev_path, &json_path)? {
-            Some(index) => index,
-            None => {
-                let index = Index {
-                    layout: layout.unwrap_or_default(),
-                    ..Index::default()
-                };
-                // Persist immediately: the layout is a creation-time property
-                // and must survive even if nothing is published yet.
-                let tmp = bin_path.with_extension("bin.tmp");
-                std::fs::write(&tmp, encode_index(&index))?;
-                std::fs::rename(&tmp, &bin_path)?;
-                index
+        let log_path = root.join(JOURNAL_FILE);
+        let log_prev_path = root.join(JOURNAL_PREV_FILE);
+        let (mut index, snapshot_bytes, mut journal_bytes) =
+            match Self::load_ledger(&bin_path, &prev_path, &json_path)? {
+                Some((index, LedgerSource::Live(bytes))) => (index, bytes, 0),
+                Some((mut index, LedgerSource::Prev)) => {
+                    // The live snapshot is gone: the journal it superseded
+                    // (rotated to `.prev` when it was written) carries the
+                    // saves between the two snapshots, and the live journal
+                    // whatever came after the lost one — which cannot apply
+                    // without it and stops at the gap. The store reads as it
+                    // did one snapshot ago at worst, and the next save writes
+                    // a fresh snapshot rather than extending a recovered one.
+                    replay_journal(&mut index, &log_prev_path)?;
+                    replay_journal(&mut index, &log_path)?;
+                    (index, 0, 0)
+                }
+                Some((index, LedgerSource::Legacy)) | Some((index, LedgerSource::Json)) => {
+                    // A pre-1.8 ledger never had a journal; anything by that
+                    // name is a stray and must not be replayed over it.
+                    let _ = std::fs::remove_file(&log_path);
+                    let _ = std::fs::remove_file(&log_prev_path);
+                    (index, 0, 0)
+                }
+                None => {
+                    let index = Index {
+                        layout: layout.unwrap_or_default(),
+                        ..Index::default()
+                    };
+                    // A journal without a snapshot describes nothing this
+                    // store can extend.
+                    let _ = std::fs::remove_file(&log_path);
+                    let _ = std::fs::remove_file(&log_prev_path);
+                    // Persist immediately: the layout is a creation-time property
+                    // and must survive even if nothing is published yet.
+                    let tmp = bin_path.with_extension("bin.tmp");
+                    let encoded = encode_index(&index);
+                    std::fs::write(&tmp, &encoded)?;
+                    std::fs::rename(&tmp, &bin_path)?;
+                    (index, encoded.len() as u64, 0)
+                }
+            };
+        if snapshot_bytes > 0 {
+            // The live snapshot loaded: replay the saves made since it was
+            // written. A torn or corrupt tail — a crash mid-append — is cut
+            // off so the next append starts from a record boundary rather
+            // than behind bytes no replay will ever get past.
+            let scan = replay_journal(&mut index, &log_path)?;
+            if scan.truncate_to < scan.file_len {
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&log_path)?
+                    .set_len(scan.truncate_to)?;
             }
-        };
+            journal_bytes = scan.truncate_to;
+        }
         if let Some(requested) = layout {
             if requested != index.layout && (bin_path.exists() || json_path.exists()) {
                 return Err(StoreError::LayoutMismatch {
@@ -362,6 +458,11 @@ impl GlobalStore {
             open_pack: None,
             preferred_pack_size: PREFERRED_PACK_SIZE,
             batch: None,
+            dirty_chunks: BTreeSet::new(),
+            dirty_assets: BTreeSet::new(),
+            journal_bytes,
+            snapshot_bytes,
+            journal_budget: None,
         };
         // A ledger recovered from a previous generation may reference packs
         // a newer GC had already quarantined; bring them back.
@@ -376,6 +477,15 @@ impl GlobalStore {
         if packs_dir.is_dir() {
             for entry in std::fs::read_dir(&packs_dir)?.flatten() {
                 if entry.path().extension().is_some_and(|e| e == "part") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+        // Likewise a record pack a crash left half-staged.
+        let records_dir = record_packs_dir(root);
+        if records_dir.is_dir() {
+            for entry in std::fs::read_dir(&records_dir)?.flatten() {
+                if entry.path().extension().is_some_and(|e| e == "tmp") {
                     let _ = std::fs::remove_file(entry.path());
                 }
             }
@@ -395,7 +505,23 @@ impl GlobalStore {
         }
         // Resolve every pending location so the migrated records are final.
         self.flush_packs()?;
+        // The segmented index keeps one record file per asset; give every
+        // asset that lives in a record pack its own file before the ledger
+        // that knew where it was is replaced.
+        let packed: Vec<String> = self.index.records.keys().cloned().collect();
+        for name in &packed {
+            let bytes = self.asset_record_bytes(name)?;
+            let path = self.root.join("assets").join(format!("{name}.json"));
+            let tmp = path.with_extension("json.tmp");
+            std::fs::write(&tmp, &bytes)?;
+            std::fs::rename(&tmp, &path)?;
+        }
+        self.index.records.clear();
         let migrated = self.index.chunks.len() as u64;
+        // One self-contained legacy snapshot for rollback. Written fresh
+        // rather than renamed from `index.bin`, which may be a journal
+        // behind the ledger being migrated.
+        let rollback = encode_index(&self.index);
         let (seg, _assets) = segindex::SegIndex::create(
             &self.root,
             self.index.generation + 1,
@@ -409,14 +535,19 @@ impl GlobalStore {
             overlay: BTreeMap::new(),
         });
         self.index.chunks = BTreeMap::new();
-        // Keep one legacy snapshot for rollback; remove the rest so a
-        // pre-3B binary cannot silently open a stale ledger.
-        let bin = self.root.join("index.bin");
-        if bin.exists() {
-            let _ = std::fs::rename(&bin, self.root.join("index.bin.pre-migration"));
-        }
+        self.dirty_chunks.clear();
+        self.dirty_assets.clear();
+        self.journal_bytes = 0;
+        self.snapshot_bytes = 0;
+        // Keep the rollback snapshot; remove the rest so a pre-3B binary
+        // cannot silently open a stale ledger.
+        std::fs::write(self.root.join("index.bin.pre-migration"), rollback)?;
+        let _ = std::fs::remove_file(self.root.join("index.bin"));
         let _ = std::fs::remove_file(self.root.join("index.bin.prev"));
         let _ = std::fs::remove_file(self.root.join("index.json"));
+        let _ = std::fs::remove_file(self.root.join(JOURNAL_FILE));
+        let _ = std::fs::remove_file(self.root.join(JOURNAL_PREV_FILE));
+        let _ = std::fs::remove_dir_all(record_packs_dir(&self.root));
         Ok(migrated)
     }
 
@@ -624,12 +755,16 @@ impl GlobalStore {
                 generation: seg.index.generation,
                 segments: seg.index.segment_count(),
                 deltas: seg.index.delta_count(),
+                journal_bytes: 0,
+                snapshot_bytes: 0,
             },
             None => IndexReport {
                 segmented: false,
                 generation: self.index.generation,
                 segments: 0,
                 deltas: 0,
+                journal_bytes: self.journal_bytes,
+                snapshot_bytes: self.snapshot_bytes,
             },
         }
     }
@@ -639,11 +774,20 @@ impl GlobalStore {
     /// corrupt or missing (a crash between the two renames of
     /// [`Self::save_index`] leaves only `.prev`). A legacy `index.json`
     /// (pre-1.6) is read as a last resort and migrated on the next save.
-    /// Returns `Ok(None)` when no ledger exists at all (a new store).
-    fn load_ledger(bin: &Path, prev: &Path, json: &Path) -> Result<Option<Index>> {
+    /// Returns `Ok(None)` when no ledger exists at all (a new store), and
+    /// otherwise which of the three it came from, since only the live
+    /// snapshot is something the journal can extend.
+    fn load_ledger(bin: &Path, prev: &Path, json: &Path) -> Result<Option<(Index, LedgerSource)>> {
         let current = if bin.exists() {
-            match decode_index(&std::fs::read(bin)?) {
-                Ok(index) => return Ok(Some(index)),
+            let bytes = std::fs::read(bin)?;
+            match decode_index_versioned(&bytes) {
+                // A snapshot older than the journal cannot have one, and must
+                // not be given one: a reader of its version would open it and
+                // miss every save the journal held. Its first save rewrites it.
+                Ok((index, version)) if version < 2 => {
+                    return Ok(Some((index, LedgerSource::Legacy)))
+                }
+                Ok((index, _)) => return Ok(Some((index, LedgerSource::Live(bytes.len() as u64)))),
                 Err(e) => Some(e), // corrupt: try the previous generation
             }
         } else {
@@ -651,7 +795,7 @@ impl GlobalStore {
         };
         if prev.exists() {
             match decode_index(&std::fs::read(prev)?) {
-                Ok(index) => return Ok(Some(index)),
+                Ok(index) => return Ok(Some((index, LedgerSource::Prev))),
                 Err(prev_err) => {
                     // Both generations bad: surface the current one's error
                     // (or the prev error when index.bin never existed).
@@ -663,9 +807,8 @@ impl GlobalStore {
             return Err(e);
         }
         if json.exists() {
-            return Ok(Some(serde_json::from_slice::<Index>(&std::fs::read(
-                json,
-            )?)?));
+            let index = serde_json::from_slice::<Index>(&std::fs::read(json)?)?;
+            return Ok(Some((index, LedgerSource::Json)));
         }
         Ok(None)
     }
@@ -694,9 +837,7 @@ impl GlobalStore {
         };
         let had_open_pack = self.open_pack.is_some();
         self.flush_packs()?;
-        for record in &pending {
-            self.write_asset_record(record)?;
-        }
+        self.write_asset_records(&pending)?;
         if !pending.is_empty() || had_open_pack {
             self.save_index()?;
         }
@@ -717,6 +858,21 @@ impl GlobalStore {
     /// Override the pack rollover size (tests use small packs).
     pub fn set_preferred_pack_size(&mut self, bytes: u64) {
         self.preferred_pack_size = bytes.max(1);
+    }
+
+    /// Override how large the ledger journal may grow before a save writes
+    /// a fresh snapshot instead of appending. The default is the size of the
+    /// snapshot itself, and never below [`JOURNAL_MIN_BYTES`]; `0` makes
+    /// every save a snapshot, which is what the pre-1.8 store did. Tests use
+    /// it to exercise the rollover; a store that is only ever opened to be
+    /// exported may prefer it too.
+    pub fn set_journal_budget(&mut self, bytes: u64) {
+        self.journal_budget = Some(bytes);
+    }
+
+    fn journal_budget(&self) -> u64 {
+        self.journal_budget
+            .unwrap_or_else(|| self.snapshot_bytes.max(JOURNAL_MIN_BYTES))
     }
 
     fn chunk_path(&self, hex: &str) -> PathBuf {
@@ -759,6 +915,7 @@ impl GlobalStore {
                 seg.overlay.insert(hex, Some(info));
             }
             None => {
+                self.dirty_chunks.insert(hex.clone());
                 self.index.chunks.insert(hex, info);
             }
         }
@@ -775,7 +932,13 @@ impl GlobalStore {
                     .insert(hex.to_string(), None); // tombstone
                 Some(old)
             }
-            None => self.index.chunks.remove(hex),
+            None => {
+                let old = self.index.chunks.remove(hex);
+                if old.is_some() {
+                    self.dirty_chunks.insert(hex.to_string());
+                }
+                old
+            }
         }
     }
 
@@ -797,6 +960,7 @@ impl GlobalStore {
             None => match self.index.chunks.get_mut(hex) {
                 Some(info) => {
                     f(info);
+                    self.dirty_chunks.insert(hex.to_string());
                     true
                 }
                 None => false,
@@ -1082,6 +1246,7 @@ impl GlobalStore {
         if let Some(old) = self.index.assets.remove(&record.name) {
             self.decrement(&old);
         }
+        self.dirty_assets.insert(record.name.clone());
         for hex in &distinct {
             self.chunk_update(hex, |info| {
                 info.refcount += 1;
@@ -1095,21 +1260,81 @@ impl GlobalStore {
             self.batch.as_mut().unwrap().push(record.clone());
             return Ok(());
         }
-        self.write_asset_record(record)?;
+        self.write_asset_records(std::slice::from_ref(record))?;
         self.save_index()
     }
 
-    /// Write an asset's record file (`assets/<name>.json`) atomically.
-    fn write_asset_record(&self, record: &AssetRecord) -> Result<()> {
-        let json = serde_json::to_vec_pretty(record)?;
-        let path = self
-            .root
-            .join("assets")
-            .join(format!("{}.json", record.name));
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, &json)?;
-        std::fs::rename(&tmp, &path)?;
+    /// Persist the records of a publish. On the monolithic ledger they go
+    /// into one content-addressed record pack and the ledger remembers the
+    /// bytes of each — one file and one fsync per publish where there used
+    /// to be four filesystem calls per asset, in a directory holding every
+    /// asset the store has, which a batch of a few hundred spent longer on
+    /// than on the ledger it was also writing. The segmented index keeps the
+    /// flat `assets/<name>.json` files; its own commit does not carry a
+    /// record table.
+    fn write_asset_records(&mut self, records: &[AssetRecord]) -> Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        if self.seg.is_some() {
+            return write_flat_asset_records(&self.root, records);
+        }
+        // Every record has an asset, so a store with more assets than
+        // records still has flat files from before 1.8, and a republish
+        // must take the flat copy with it — a reader that lost the ledger
+        // would otherwise find the stale one. A store past that point skips
+        // the unlink per asset.
+        let flat_records_remain = self.index.assets.len() > self.index.records.len();
+        for (name, at) in write_record_pack(&self.root, records)? {
+            if flat_records_remain {
+                let flat = self.root.join("assets").join(format!("{name}.json"));
+                let _ = std::fs::remove_file(flat);
+            }
+            self.index.records.insert(name, at);
+        }
         Ok(())
+    }
+
+    /// An asset's record as stored: from its record pack, or from the flat
+    /// file an older publish (or the segmented index) wrote.
+    fn asset_record_bytes(&self, name: &str) -> Result<Vec<u8>> {
+        use std::io::{Read as _, Seek as _};
+        if let Some(at) = self.index.records.get(name) {
+            let path = record_pack_path(&self.root, &at.pack);
+            let mut f = std::fs::File::open(&path)
+                .map_err(|_| StoreError::AssetNotFound(name.to_string()))?;
+            f.seek(std::io::SeekFrom::Start(at.offset as u64))?;
+            let mut bytes = vec![0u8; at.len as usize];
+            f.read_exact(&mut bytes)?;
+            return Ok(bytes);
+        }
+        let path = self.root.join("assets").join(format!("{name}.json"));
+        std::fs::read(&path).map_err(|_| StoreError::AssetNotFound(name.to_string()))
+    }
+
+    /// Delete record packs no live asset points into. Records are small and
+    /// a pack is immutable, so a replaced or unpublished asset leaves its
+    /// bytes behind until the pack holds nothing live; `gc` sweeps those.
+    fn sweep_dead_record_packs(&self) -> Result<u64> {
+        let dir = record_packs_dir(&self.root);
+        if !dir.is_dir() {
+            return Ok(0);
+        }
+        let live: HashSet<[u8; 32]> = self.index.records.values().map(|r| r.pack).collect();
+        let mut reclaimed = 0u64;
+        for entry in std::fs::read_dir(&dir)?.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|e| e != "cavsrec") {
+                continue;
+            }
+            let hash = path.file_stem().and_then(|s| s.to_str()).and_then(from_hex);
+            if hash.is_some_and(|h| live.contains(&h)) {
+                continue;
+            }
+            reclaimed += entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let _ = std::fs::remove_file(&path);
+        }
+        Ok(reclaimed)
     }
 
     /// Unpublish an asset: drop its references (chunks may become zero-ref,
@@ -1118,7 +1343,9 @@ impl GlobalStore {
         let Some(chunks) = self.index.assets.remove(name) else {
             return Ok(false);
         };
+        self.dirty_assets.insert(name.to_string());
         self.decrement(&chunks);
+        self.index.records.remove(name);
         let path = self.root.join("assets").join(format!("{name}.json"));
         let _ = std::fs::remove_file(path);
         self.save_index()?;
@@ -1181,6 +1408,8 @@ impl GlobalStore {
         }
         self.quarantine_orphan_packs(grace_secs)?;
         bytes += self.sweep_quarantine(grace_secs)?;
+        // Bookkeeping, not content: not counted in what gc reports reclaimed.
+        self.sweep_dead_record_packs()?;
         self.save_index()?;
         Ok((doomed.len() as u64, bytes))
     }
@@ -1367,10 +1596,7 @@ impl GlobalStore {
     }
 
     pub fn get_asset(&self, name: &str) -> Result<AssetRecord> {
-        let path = self.root.join("assets").join(format!("{name}.json"));
-        let bytes =
-            std::fs::read(&path).map_err(|_| StoreError::AssetNotFound(name.to_string()))?;
-        Ok(serde_json::from_slice(&bytes)?)
+        Ok(serde_json::from_slice(&self.asset_record_bytes(name)?)?)
     }
 
     pub fn stats(&self) -> StoreStats {
@@ -1511,7 +1737,7 @@ impl GlobalStore {
             let rel = format!("assets/{name}/record.json");
             let dst = out.join(&rel);
             std::fs::create_dir_all(dst.parent().unwrap())?;
-            std::fs::copy(self.root.join("assets").join(format!("{name}.json")), &dst)?;
+            std::fs::write(&dst, self.asset_record_bytes(name)?)?;
             written.push(rel);
         }
         Ok(written)
@@ -1743,7 +1969,7 @@ impl GlobalStore {
         let rel = format!("assets/{name}/record.json");
         let dst = out.join(&rel);
         std::fs::create_dir_all(dst.parent().unwrap())?;
-        std::fs::copy(self.root.join("assets").join(format!("{name}.json")), &dst)?;
+        std::fs::write(&dst, self.asset_record_bytes(name)?)?;
         written.push(rel);
 
         written.push(self.write_chunk_map(name, out)?);
@@ -1919,7 +2145,65 @@ impl GlobalStore {
             self.index.generation = seg.index.generation;
             return Ok(());
         }
-        self.index.generation += 1;
+        // Monolithic mode: a save is a journal record of what it touched.
+        // The snapshot is rewritten only when the journal has outgrown it —
+        // past that point a fresh snapshot is cheaper to replay than the
+        // records it would replace — or when there is no snapshot to extend.
+        let generation = self.index.generation + 1;
+        let dirty_chunks = std::mem::take(&mut self.dirty_chunks);
+        let dirty_assets = std::mem::take(&mut self.dirty_assets);
+        if self.snapshot_bytes > 0 {
+            let record =
+                encode_journal_record(&self.index, generation, &dirty_chunks, &dirty_assets);
+            if self.journal_bytes + record.len() as u64 <= self.journal_budget() {
+                if let Err(e) = self.append_journal(&record) {
+                    // Nothing landed: the entries are still dirty and the
+                    // next save carries them.
+                    self.dirty_chunks = dirty_chunks;
+                    self.dirty_assets = dirty_assets;
+                    return Err(e);
+                }
+                self.index.generation = generation;
+                self.journal_bytes += record.len() as u64;
+                return Ok(());
+            }
+        }
+        self.index.generation = generation;
+        self.write_snapshot()?;
+        Ok(())
+    }
+
+    /// Append one sealed record to `index.log`, durably. The journal is
+    /// created on the first append; a file that already exists is extended
+    /// in place, which is one fsync and no directory update.
+    fn append_journal(&mut self, record: &[u8]) -> Result<()> {
+        use std::io::Write as _;
+        let path = self.root.join(JOURNAL_FILE);
+        let created = self.journal_bytes == 0;
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&path)?;
+        let written = f.write_all(record).and_then(|_| f.sync_all());
+        if let Err(e) = written {
+            // A partial record would stop every later replay at this
+            // offset; cut back to the last record boundary before failing.
+            let _ = f.set_len(self.journal_bytes);
+            return Err(e.into());
+        }
+        if created {
+            if let Ok(dir) = std::fs::File::open(&self.root) {
+                let _ = dir.sync_all();
+            }
+        }
+        Ok(())
+    }
+
+    /// Write the whole ledger as a fresh `index.bin`, keeping the previous
+    /// snapshot as `index.bin.prev`, and rotate the journal it supersedes to
+    /// `index.log.prev` so a recovery from `.prev` still has the saves
+    /// between the two snapshots.
+    fn write_snapshot(&mut self) -> Result<()> {
         let path = self.root.join("index.bin");
         let prev = self.root.join("index.bin.prev");
         let tmp = path.with_extension("bin.tmp");
@@ -1930,23 +2214,451 @@ impl GlobalStore {
             f.write_all(&encoded)?;
             f.sync_all()?;
         }
-        // Read back what the filesystem actually holds: a truncated or
-        // bit-flipped staging write must fail here, not at the next open.
-        decode_index(&std::fs::read(&tmp)?).inspect_err(|_| {
+        // Read back what the filesystem actually holds and check the seal:
+        // a truncated or bit-flipped staging write must fail here, not at
+        // the next open. The seal is what decoding would check first, and
+        // it costs a hash where a decode costs a ledger's worth of
+        // allocations.
+        if !index_seal_holds(&std::fs::read(&tmp)?) {
             let _ = std::fs::remove_file(&tmp);
-        })?;
+            return Err(StoreError::IndexCorrupt(
+                "snapshot read back from disk does not match what was written".into(),
+            ));
+        }
         if path.exists() {
             std::fs::rename(&path, &prev)?;
         }
         std::fs::rename(&tmp, &path)?;
-        // Make both renames durable before reporting success.
+        let log = self.root.join(JOURNAL_FILE);
+        let log_prev = self.root.join(JOURNAL_PREV_FILE);
+        if log.exists() {
+            std::fs::rename(&log, &log_prev)?;
+        } else {
+            // Two snapshots in a row: the older rotated journal predates
+            // `index.bin.prev` and no recovery can use it.
+            let _ = std::fs::remove_file(&log_prev);
+        }
+        // Make the renames durable before reporting success.
         if let Ok(dir) = std::fs::File::open(&self.root) {
             let _ = dir.sync_all();
         }
         // A legacy pre-1.6 ledger is superseded by this save; leaving it
         // behind would resurrect stale state on a downgrade mid-history.
         let _ = std::fs::remove_file(self.root.join("index.json"));
+        self.snapshot_bytes = encoded.len() as u64;
+        self.journal_bytes = 0;
         Ok(())
+    }
+}
+
+/// Where a loaded ledger came from; only the live snapshot is something the
+/// journal can extend.
+enum LedgerSource {
+    /// `index.bin`, with its size.
+    Live(u64),
+    /// `index.bin.prev`: the live snapshot was missing or corrupt.
+    Prev,
+    /// A v1 `index.bin`, written before the journal existed.
+    Legacy,
+    /// A pre-1.6 `index.json`.
+    Json,
+}
+
+/// Write an asset's record file (`assets/<name>.json`) atomically.
+fn write_asset_record_at(root: &Path, record: &AssetRecord) -> Result<()> {
+    let json = serde_json::to_vec_pretty(record)?;
+    let path = root.join("assets").join(format!("{}.json", record.name));
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &json)?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(())
+}
+
+/// Where record packs live, and the path of one.
+fn record_packs_dir(root: &Path) -> PathBuf {
+    root.join("assets").join("records")
+}
+
+fn record_pack_path(root: &Path, pack: &[u8; 32]) -> PathBuf {
+    record_packs_dir(root).join(format!("{}.cavsrec", to_hex(pack)))
+}
+
+/// Write one record pack holding `records` back to back, and say where each
+/// landed. The file is named by the BLAKE3 of its bytes, so it is immutable
+/// once written and a batch published twice is one file. Synced before it is
+/// named: the ledger that points into it is synced right after, and a record
+/// the ledger names must be there to read.
+fn write_record_pack(root: &Path, records: &[AssetRecord]) -> Result<Vec<(String, RecordRef)>> {
+    use std::io::Write as _;
+    let mut bytes = Vec::new();
+    let mut spans: Vec<(String, u32, u32)> = Vec::with_capacity(records.len());
+    for record in records {
+        let json = serde_json::to_vec_pretty(record)?;
+        spans.push((record.name.clone(), bytes.len() as u32, json.len() as u32));
+        bytes.extend_from_slice(&json);
+    }
+    let pack = cavs_hash::hash_chunk(&bytes);
+    let path = record_pack_path(root, &pack);
+    if !path.exists() {
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        let tmp = path.with_extension("cavsrec.tmp");
+        {
+            let mut f = std::fs::File::create(&tmp)?;
+            f.write_all(&bytes)?;
+            f.sync_all()?;
+        }
+        std::fs::rename(&tmp, &path)?;
+    }
+    Ok(spans
+        .into_iter()
+        .map(|(name, offset, len)| (name, RecordRef { pack, offset, len }))
+        .collect())
+}
+
+/// Write a batch of flat asset records (`assets/<name>.json`), across threads
+/// once there are enough to pay for them. Each record is four filesystem
+/// calls in a directory that holds every asset the store has, and they wait
+/// on the disk rather than on each other.
+fn write_flat_asset_records(root: &Path, records: &[AssetRecord]) -> Result<()> {
+    const PER_THREAD: usize = 32;
+    const MAX_THREADS: usize = 8;
+    if records.len() <= PER_THREAD {
+        return records
+            .iter()
+            .try_for_each(|r| write_asset_record_at(root, r));
+    }
+    let threads = records.len().div_ceil(PER_THREAD).min(MAX_THREADS);
+    let per = records.len().div_ceil(threads);
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = records
+            .chunks(per)
+            .map(|part| {
+                scope.spawn(move || part.iter().try_for_each(|r| write_asset_record_at(root, r)))
+            })
+            .collect();
+        for worker in workers {
+            worker.join().expect("asset record writer panicked")?;
+        }
+        Ok(())
+    })
+}
+
+// --- ledger journal (index.log) --------------------------------------------
+//
+// A save in monolithic mode appends one record describing the entries it
+// touched, sealed on its own so a torn tail is detected at the record where
+// it happened. Layout, little-endian throughout:
+//
+//   "CAVSIDL1"        magic
+//   u16 version       readers reject versions above their own
+//   u16 reserved      0
+//   u32 body_len
+//   u64 generation    the ledger generation this record produces
+//   body:
+//     u16 pack_count  { u16 len, hex bytes } × pack_count
+//     u32 upserts     { hash 32B, len_raw u32, len_stored u32, flags u32,
+//                       refcount u64, zero_since u64 (MAX = none),
+//                       pack_ord u16 (MAX = none), pack_offset u64 } × upserts
+//     u32 removals    { hash 32B } × removals
+//     u32 asset_puts  { u16 len, name bytes, u32 n, hash 32B × n,
+//                       u8 packed, if 1: pack 32B, u32 offset, u32 len } × asset_puts
+//     u32 asset_dels  { u16 len, name bytes } × asset_dels
+//   BLAKE3 of everything above (32B seal)
+//
+// Replay applies records in generation order, each exactly one past the
+// ledger it lands on: an older record is a rotated journal's and is skipped,
+// a gap or a bad seal ends the replay where it stands.
+
+const JOURNAL_FILE: &str = "index.log";
+const JOURNAL_PREV_FILE: &str = "index.log.prev";
+const JOURNAL_MAGIC: &[u8; 8] = b"CAVSIDL1";
+const JOURNAL_VERSION: u16 = 1;
+const JOURNAL_HEADER_SIZE: usize = 24;
+const JOURNAL_SEAL_SIZE: usize = 32;
+/// The journal may always grow to this before a snapshot is rewritten, so a
+/// small store is not snapshotting on every other save.
+pub const JOURNAL_MIN_BYTES: u64 = 1 << 20;
+
+fn encode_journal_record(
+    index: &Index,
+    generation: u64,
+    dirty_chunks: &BTreeSet<String>,
+    dirty_assets: &BTreeSet<String>,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(
+        JOURNAL_HEADER_SIZE
+            + JOURNAL_SEAL_SIZE
+            + dirty_chunks.len() * 72
+            + dirty_assets.len() * 128,
+    );
+    out.extend_from_slice(JOURNAL_MAGIC);
+    out.extend_from_slice(&JOURNAL_VERSION.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // body_len, patched below
+    out.extend_from_slice(&generation.to_le_bytes());
+    debug_assert_eq!(out.len(), JOURNAL_HEADER_SIZE);
+
+    let mut upserts: Vec<(&str, &ChunkInfo)> = Vec::new();
+    let mut removals: Vec<&str> = Vec::new();
+    for hex in dirty_chunks {
+        match index.chunks.get(hex) {
+            Some(info) => upserts.push((hex, info)),
+            None => removals.push(hex),
+        }
+    }
+    let mut packs: Vec<&str> = Vec::new();
+    let mut pack_ord: HashMap<&str, u16> = HashMap::new();
+    for (_, info) in &upserts {
+        if let Some(p) = info.pack.as_deref() {
+            if !pack_ord.contains_key(p) {
+                pack_ord.insert(p, packs.len() as u16);
+                packs.push(p);
+            }
+        }
+    }
+    out.extend_from_slice(&(packs.len() as u16).to_le_bytes());
+    for p in &packs {
+        out.extend_from_slice(&(p.len() as u16).to_le_bytes());
+        out.extend_from_slice(p.as_bytes());
+    }
+    out.extend_from_slice(&(upserts.len() as u32).to_le_bytes());
+    for (hex, info) in &upserts {
+        out.extend_from_slice(&from_hex(hex).unwrap_or([0u8; 32]));
+        out.extend_from_slice(&info.len_raw.to_le_bytes());
+        out.extend_from_slice(&info.len_stored.to_le_bytes());
+        out.extend_from_slice(&info.flags.to_le_bytes());
+        out.extend_from_slice(&info.refcount.to_le_bytes());
+        out.extend_from_slice(&info.zero_since.unwrap_or(u64::MAX).to_le_bytes());
+        let ord = info
+            .pack
+            .as_deref()
+            .and_then(|p| pack_ord.get(p).copied())
+            .unwrap_or(u16::MAX);
+        out.extend_from_slice(&ord.to_le_bytes());
+        out.extend_from_slice(&info.pack_offset.unwrap_or(0).to_le_bytes());
+    }
+    out.extend_from_slice(&(removals.len() as u32).to_le_bytes());
+    for hex in &removals {
+        out.extend_from_slice(&from_hex(hex).unwrap_or([0u8; 32]));
+    }
+
+    let mut asset_puts: Vec<(&str, &Vec<String>)> = Vec::new();
+    let mut asset_dels: Vec<&str> = Vec::new();
+    for name in dirty_assets {
+        match index.assets.get(name) {
+            Some(chunks) => asset_puts.push((name, chunks)),
+            None => asset_dels.push(name),
+        }
+    }
+    out.extend_from_slice(&(asset_puts.len() as u32).to_le_bytes());
+    for (name, chunks) in &asset_puts {
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(&(chunks.len() as u32).to_le_bytes());
+        for hex in chunks.iter() {
+            out.extend_from_slice(&from_hex(hex).unwrap_or([0u8; 32]));
+        }
+        encode_record_ref(&mut out, index.records.get(*name));
+    }
+    out.extend_from_slice(&(asset_dels.len() as u32).to_le_bytes());
+    for name in &asset_dels {
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+    }
+
+    let body_len = (out.len() - JOURNAL_HEADER_SIZE) as u32;
+    out[12..16].copy_from_slice(&body_len.to_le_bytes());
+    let seal = cavs_hash::hash_chunk(&out);
+    out.extend_from_slice(&seal);
+    out
+}
+
+/// What a journal replay found: how much of the file held records the
+/// ledger could take, and how long the file is. A difference is a tail no
+/// replay can use.
+struct JournalScan {
+    truncate_to: u64,
+    file_len: u64,
+}
+
+/// Apply every record of `path` that follows on from `index`'s generation.
+/// A missing file is an empty journal. Never fails on the journal's own
+/// contents — a torn or corrupt record ends the replay — only on I/O.
+fn replay_journal(index: &mut Index, path: &Path) -> Result<JournalScan> {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(JournalScan {
+                truncate_to: 0,
+                file_len: 0,
+            })
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let mut at = 0usize;
+    while let Some((record, generation)) = next_journal_record(&bytes[at..]) {
+        let len = record.len();
+        if generation == index.generation + 1 {
+            if apply_journal_record(index, &record[JOURNAL_HEADER_SIZE..len - JOURNAL_SEAL_SIZE])
+                .is_err()
+            {
+                break;
+            }
+            index.generation = generation;
+        } else if generation > index.generation + 1 {
+            break; // a gap: nothing past it can apply
+        }
+        // else: older than the ledger — a rotated journal's record; skip.
+        at += len;
+    }
+    Ok(JournalScan {
+        truncate_to: at as u64,
+        file_len: bytes.len() as u64,
+    })
+}
+
+/// The sealed record at the start of `bytes` and its generation, or `None`
+/// when what is there is not a whole, intact record.
+fn next_journal_record(bytes: &[u8]) -> Option<(&[u8], u64)> {
+    if bytes.len() < JOURNAL_HEADER_SIZE + JOURNAL_SEAL_SIZE || &bytes[..8] != JOURNAL_MAGIC {
+        return None;
+    }
+    let version = u16::from_le_bytes(bytes[8..10].try_into().unwrap());
+    if version > JOURNAL_VERSION {
+        return None;
+    }
+    let body_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let total = JOURNAL_HEADER_SIZE + body_len + JOURNAL_SEAL_SIZE;
+    if bytes.len() < total {
+        return None;
+    }
+    let (sealed, seal) = bytes[..total].split_at(total - JOURNAL_SEAL_SIZE);
+    if cavs_hash::hash_chunk(sealed) != <[u8; 32]>::try_from(seal).unwrap() {
+        return None;
+    }
+    let generation = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+    Some((&bytes[..total], generation))
+}
+
+fn apply_journal_record(index: &mut Index, body: &[u8]) -> Result<()> {
+    let corrupt = |what: &str| StoreError::IndexCorrupt(what.to_string());
+    let mut cur = Cursor { body, at: 0 };
+    let pack_count = cur.u16()? as usize;
+    let mut packs = Vec::with_capacity(pack_count.min(cur.remaining() / 2));
+    for _ in 0..pack_count {
+        let len = cur.u16()? as usize;
+        let s = std::str::from_utf8(cur.take(len)?).map_err(|_| corrupt("pack id not utf-8"))?;
+        packs.push(s.to_string());
+    }
+    let upserts = cur.u32()? as usize;
+    if upserts > cur.remaining() / 70 {
+        return Err(corrupt("upsert count exceeds record"));
+    }
+    for _ in 0..upserts {
+        let hash: [u8; 32] = cur.take(32)?.try_into().unwrap();
+        let len_raw = cur.u32()?;
+        let len_stored = cur.u32()?;
+        let flags = cur.u32()?;
+        let refcount = cur.u64()?;
+        let zero_since = match cur.u64()? {
+            u64::MAX => None,
+            v => Some(v),
+        };
+        let ord = cur.u16()?;
+        let pack_offset = cur.u64()?;
+        let pack = if ord == u16::MAX {
+            None
+        } else {
+            Some(
+                packs
+                    .get(ord as usize)
+                    .ok_or_else(|| corrupt("pack ordinal out of range"))?
+                    .clone(),
+            )
+        };
+        index.chunks.insert(
+            to_hex(&hash),
+            ChunkInfo {
+                len_raw,
+                len_stored,
+                flags,
+                refcount,
+                zero_since,
+                pack_offset: pack.is_some().then_some(pack_offset),
+                pack,
+            },
+        );
+    }
+    let removals = cur.u32()? as usize;
+    if removals > cur.remaining() / 32 {
+        return Err(corrupt("removal count exceeds record"));
+    }
+    for _ in 0..removals {
+        let hash: [u8; 32] = cur.take(32)?.try_into().unwrap();
+        index.chunks.remove(&to_hex(&hash));
+    }
+    let asset_puts = cur.u32()? as usize;
+    for _ in 0..asset_puts {
+        let len = cur.u16()? as usize;
+        let name = std::str::from_utf8(cur.take(len)?)
+            .map_err(|_| corrupt("asset name not utf-8"))?
+            .to_string();
+        let n = cur.u32()? as usize;
+        if n > cur.remaining() / 32 {
+            return Err(corrupt("asset chunk count exceeds record"));
+        }
+        let mut hexes = Vec::with_capacity(n);
+        for _ in 0..n {
+            let hash: [u8; 32] = cur.take(32)?.try_into().unwrap();
+            hexes.push(to_hex(&hash));
+        }
+        match decode_record_ref(&mut cur)? {
+            Some(at) => index.records.insert(name.clone(), at),
+            None => index.records.remove(&name),
+        };
+        index.assets.insert(name, hexes);
+    }
+    let asset_dels = cur.u32()? as usize;
+    for _ in 0..asset_dels {
+        let len = cur.u16()? as usize;
+        let name =
+            std::str::from_utf8(cur.take(len)?).map_err(|_| corrupt("asset name not utf-8"))?;
+        index.assets.remove(name);
+        index.records.remove(name);
+    }
+    if cur.remaining() != 0 {
+        return Err(corrupt("trailing bytes"));
+    }
+    Ok(())
+}
+
+/// A bounds-checked reader over a sealed body; every read past the end is
+/// the same `IndexCorrupt("truncated")`.
+struct Cursor<'a> {
+    body: &'a [u8],
+    at: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
+        let s = self
+            .body
+            .get(self.at..self.at.saturating_add(n))
+            .ok_or_else(|| StoreError::IndexCorrupt("truncated".into()))?;
+        self.at += n;
+        Ok(s)
+    }
+    fn remaining(&self) -> usize {
+        self.body.len() - self.at
+    }
+    fn u16(&mut self) -> Result<u16> {
+        Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+    }
+    fn u32(&mut self) -> Result<u32> {
+        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+    }
+    fn u64(&mut self) -> Result<u64> {
+        Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
     }
 }
 
@@ -1973,11 +2685,18 @@ impl GlobalStore {
 //                         refcount u64, zero_since u64 (MAX = none),
 //                         pack_ord u32 (MAX = none), pack_offset u64
 //                       } × chunk_count, sorted by hex (BTreeMap order)
-//     u32 asset_count   { u16 len, name bytes, u32 n, hash 32B × n } × count
+//     u32 asset_count   { u16 len, name bytes, u32 n, hash 32B × n,
+//                         v2: u8 packed, if 1: pack 32B, u32 offset, u32 len
+//                       } × count
 //   BLAKE3 of everything above (32B seal)
+//
+// v2 (1.8) added the record location per asset. It is also the version
+// from which a ledger may be followed by a journal (index.log): a v1
+// reader rejects v2 rather than reading the snapshot and missing the saves
+// the journal holds, which is what the version field is for.
 
 const INDEX_MAGIC: &[u8; 8] = b"CAVSIDX1";
-const INDEX_VERSION: u16 = 1;
+const INDEX_VERSION: u16 = 2;
 const INDEX_HEADER_SIZE: u16 = 40;
 const INDEX_RECORD_SIZE: u16 = 72;
 
@@ -2044,6 +2763,7 @@ fn encode_index(index: &Index) -> Vec<u8> {
         for hex in chunks {
             out.extend_from_slice(&from_hex(hex).unwrap_or([0u8; 32]));
         }
+        encode_record_ref(&mut out, index.records.get(name));
     }
 
     let seal = cavs_hash::hash_chunk(&out);
@@ -2051,36 +2771,60 @@ fn encode_index(index: &Index) -> Vec<u8> {
     out
 }
 
+fn encode_record_ref(out: &mut Vec<u8>, at: Option<&RecordRef>) {
+    match at {
+        Some(at) => {
+            out.push(1);
+            out.extend_from_slice(&at.pack);
+            out.extend_from_slice(&at.offset.to_le_bytes());
+            out.extend_from_slice(&at.len.to_le_bytes());
+        }
+        None => out.push(0),
+    }
+}
+
+fn decode_record_ref(cur: &mut Cursor<'_>) -> Result<Option<RecordRef>> {
+    match cur.take(1)?[0] {
+        0 => Ok(None),
+        1 => {
+            let pack: [u8; 32] = cur.take(32)?.try_into().unwrap();
+            let offset = cur.u32()?;
+            let len = cur.u32()?;
+            Ok(Some(RecordRef { pack, offset, len }))
+        }
+        _ => Err(StoreError::IndexCorrupt("bad record location tag".into())),
+    }
+}
+
+/// Whether `bytes` is a whole snapshot whose BLAKE3 seal matches its body.
+/// What a decode would check first, at the cost of a hash rather than of
+/// materializing the ledger.
+fn index_seal_holds(bytes: &[u8]) -> bool {
+    if bytes.len() < INDEX_HEADER_SIZE as usize + 32 {
+        return false;
+    }
+    let (body, seal) = bytes.split_at(bytes.len() - 32);
+    cavs_hash::hash_chunk(body) == <[u8; 32]>::try_from(seal).unwrap()
+}
+
 fn decode_index(bytes: &[u8]) -> Result<Index> {
+    decode_index_versioned(bytes).map(|(index, _)| index)
+}
+
+/// Decode a snapshot and say which format version wrote it.
+fn decode_index_versioned(bytes: &[u8]) -> Result<(Index, u16)> {
     let corrupt = |what: &str| StoreError::IndexCorrupt(what.to_string());
     if bytes.len() < INDEX_HEADER_SIZE as usize + 32 {
         return Err(corrupt("truncated"));
     }
-    let (body, seal) = bytes.split_at(bytes.len() - 32);
-    if cavs_hash::hash_chunk(body) != <[u8; 32]>::try_from(seal).unwrap() {
+    if !index_seal_holds(bytes) {
         return Err(corrupt("seal mismatch"));
     }
+    let body = &bytes[..bytes.len() - 32];
     if &body[..8] != INDEX_MAGIC {
         return Err(corrupt("bad magic"));
     }
-    struct Cur<'a> {
-        body: &'a [u8],
-        at: usize,
-    }
-    impl<'a> Cur<'a> {
-        fn take(&mut self, n: usize) -> Result<&'a [u8]> {
-            let s = self
-                .body
-                .get(self.at..self.at.saturating_add(n))
-                .ok_or_else(|| StoreError::IndexCorrupt("truncated".into()))?;
-            self.at += n;
-            Ok(s)
-        }
-        fn remaining(&self) -> usize {
-            self.body.len() - self.at
-        }
-    }
-    let mut cur = Cur { body, at: 8 };
+    let mut cur = Cursor { body, at: 8 };
     macro_rules! take {
         ($n:expr) => {
             cur.take($n)
@@ -2176,6 +2920,7 @@ fn decode_index(bytes: &[u8]) -> Result<Index> {
 
     let asset_count = u32le(take!(4)?) as usize;
     let mut assets = BTreeMap::new();
+    let mut records = BTreeMap::new();
     for _ in 0..asset_count {
         let len = u16le(take!(2)?) as usize;
         let name = std::str::from_utf8(take!(len)?)
@@ -2190,17 +2935,26 @@ fn decode_index(bytes: &[u8]) -> Result<Index> {
             let hash: [u8; 32] = take!(32)?.try_into().unwrap();
             hexes.push(to_hex(&hash));
         }
+        if version >= 2 {
+            if let Some(at) = decode_record_ref(&mut cur)? {
+                records.insert(name.clone(), at);
+            }
+        }
         assets.insert(name, hexes);
     }
     if cur.remaining() != 0 {
         return Err(corrupt("trailing bytes"));
     }
-    Ok(Index {
-        chunks,
-        assets,
-        layout,
-        generation,
-    })
+    Ok((
+        Index {
+            chunks,
+            assets,
+            records,
+            layout,
+            generation,
+        },
+        version,
+    ))
 }
 
 /// Copy `src` to `dst` unless `dst` already exists with the same length.
@@ -2820,11 +3574,21 @@ mod tests {
             "app".into(),
             index.chunks.keys().take(40).cloned().collect(),
         );
+        index.assets.insert("flat".into(), vec![]);
+        index.records.insert(
+            "app".into(),
+            RecordRef {
+                pack: [7u8; 32],
+                offset: 1234,
+                len: 567,
+            },
+        );
 
         let bytes = encode_index(&index);
         let back = decode_index(&bytes).unwrap();
         assert_eq!(back.layout, index.layout);
         assert_eq!(back.assets, index.assets);
+        assert_eq!(back.records, index.records);
         assert_eq!(back.chunks.len(), index.chunks.len());
         for (hex, info) in &index.chunks {
             let b = &back.chunks[hex];
@@ -2887,6 +3651,8 @@ mod tests {
         let (ha, hb) = (hash_chunk(&a), hash_chunk(&b));
         {
             let mut store = GlobalStore::open(dir.path()).unwrap();
+            // Every save a snapshot: this is the snapshot pair's recovery.
+            store.set_journal_budget(0);
             store.put_chunk(&ha, &a, 0, a.len() as u32).unwrap();
             store.publish_asset(&rec("first", &[&ha])).unwrap();
             store.put_chunk(&hb, &b, 0, b.len() as u32).unwrap();
@@ -2918,6 +3684,317 @@ mod tests {
             GlobalStore::open(dir.path()),
             Err(StoreError::IndexCorrupt(_))
         ));
+    }
+
+    /// Everything a store can say about one chunk, for equality across a
+    /// reopen.
+    fn chunk_view(store: &GlobalStore, hash: &ChunkHash) -> Option<ChunkInfo> {
+        store.chunk_info(hash)
+    }
+
+    #[test]
+    fn saves_append_to_the_journal_and_replay_on_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let bodies: Vec<Vec<u8>> = (0u8..6).map(|i| vec![i; 400 + i as usize]).collect();
+        let hashes: Vec<ChunkHash> = bodies.iter().map(|b| hash_chunk(b)).collect();
+        let snapshot_before;
+        {
+            let mut store =
+                GlobalStore::open_with_layout(dir.path(), Some(StoreLayout::Packfiles)).unwrap();
+            snapshot_before = std::fs::read(dir.path().join("index.bin")).unwrap();
+            for (i, (body, hash)) in bodies.iter().zip(&hashes).enumerate() {
+                store.put_chunk(hash, body, 0, body.len() as u32).unwrap();
+                // Two assets share chunk 0: refcounts and a replace are
+                // journaled too.
+                store
+                    .publish_asset(&rec(&format!("a{i}"), &[hash, &hashes[0]]))
+                    .unwrap();
+            }
+            store.publish_asset(&rec("a1", &[&hashes[1]])).unwrap(); // replace
+            assert!(store.unpublish_asset("a2").unwrap());
+            let report = store.index_report();
+            assert!(report.journal_bytes > 0, "saves went to the journal");
+            assert_eq!(report.generation, 8);
+        }
+        // The snapshot was never rewritten; the journal carries every save.
+        assert_eq!(
+            std::fs::read(dir.path().join("index.bin")).unwrap(),
+            snapshot_before
+        );
+        assert!(dir.path().join("index.log").exists());
+
+        let store = GlobalStore::open(dir.path()).unwrap();
+        assert_eq!(store.index_report().generation, 8);
+        for i in [0usize, 1, 3, 4, 5] {
+            assert!(store.has_asset(&format!("a{i}")), "a{i}");
+        }
+        assert!(!store.has_asset("a2"));
+        // Chunk 0 is referenced by a0, a3, a4, a5 (a1 dropped it, a2 is gone).
+        let c0 = chunk_view(&store, &hashes[0]).unwrap();
+        assert_eq!(c0.refcount, 4);
+        assert!(
+            c0.pack.is_some() && c0.pack_offset.is_some(),
+            "location replayed"
+        );
+        let c2 = chunk_view(&store, &hashes[2]).unwrap();
+        assert_eq!(c2.refcount, 0);
+        assert!(c2.zero_since.is_some());
+        assert_eq!(store.get_asset("a1").unwrap().chunk_table.len(), 1);
+        assert_eq!(store.read_chunk_stored(&hashes[4]).unwrap().0, bodies[4]);
+    }
+
+    #[test]
+    fn a_torn_journal_tail_is_dropped_and_the_next_save_lands_cleanly() {
+        let dir = tempfile::tempdir().unwrap();
+        let bodies: Vec<Vec<u8>> = (10u8..14).map(|i| vec![i; 300]).collect();
+        let hashes: Vec<ChunkHash> = bodies.iter().map(|b| hash_chunk(b)).collect();
+        {
+            let mut store = GlobalStore::open(dir.path()).unwrap();
+            for (i, (body, hash)) in bodies.iter().zip(&hashes).enumerate().take(3) {
+                store.put_chunk(hash, body, 0, body.len() as u32).unwrap();
+                store
+                    .publish_asset(&rec(&format!("t{i}"), &[hash]))
+                    .unwrap();
+            }
+        }
+        let log = dir.path().join("index.log");
+        let intact = std::fs::read(&log).unwrap();
+
+        // A crash mid-append leaves half a record: replay keeps the three
+        // whole ones and the file is cut back to them.
+        let mut torn = intact.clone();
+        torn.extend_from_slice(&intact[..JOURNAL_HEADER_SIZE + 10]);
+        std::fs::write(&log, &torn).unwrap();
+        {
+            let mut store = GlobalStore::open(dir.path()).unwrap();
+            assert!(store.has_asset("t0") && store.has_asset("t1") && store.has_asset("t2"));
+            assert_eq!(std::fs::metadata(&log).unwrap().len(), intact.len() as u64);
+            store.put_chunk(&hashes[3], &bodies[3], 0, 300).unwrap();
+            store.publish_asset(&rec("t3", &[&hashes[3]])).unwrap();
+        }
+        let store = GlobalStore::open(dir.path()).unwrap();
+        assert!(store.has_asset("t3"), "the save after the repair replays");
+        drop(store);
+
+        // A flipped byte inside the last record: that save is lost, the
+        // ones before it are not, and nothing pretends otherwise.
+        let mut flipped = intact.clone();
+        let last = flipped.len() - JOURNAL_SEAL_SIZE - 4;
+        flipped[last] ^= 0x55;
+        std::fs::write(&log, &flipped).unwrap();
+        let store = GlobalStore::open(dir.path()).unwrap();
+        assert!(store.has_asset("t0") && store.has_asset("t1"));
+        assert!(!store.has_asset("t2"));
+        assert!(!store.has_asset("t3"));
+    }
+
+    #[test]
+    fn the_journal_rolls_into_a_snapshot_past_its_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let bodies: Vec<Vec<u8>> = (20u8..32).map(|i| vec![i; 200]).collect();
+        let hashes: Vec<ChunkHash> = bodies.iter().map(|b| hash_chunk(b)).collect();
+        let snapshot_generation;
+        {
+            let mut store = GlobalStore::open(dir.path()).unwrap();
+            // Room for a few records, not for all of them.
+            store.set_journal_budget(700);
+            for (i, (body, hash)) in bodies.iter().zip(&hashes).enumerate() {
+                store.put_chunk(hash, body, 0, body.len() as u32).unwrap();
+                store
+                    .publish_asset(&rec(&format!("r{i}"), &[hash]))
+                    .unwrap();
+            }
+            let report = store.index_report();
+            assert_eq!(report.generation, 12);
+            assert!(report.snapshot_bytes > 0);
+            assert!(
+                report.journal_bytes <= 700,
+                "journal stayed inside its budget: {}",
+                report.journal_bytes
+            );
+            snapshot_generation =
+                decode_index(&std::fs::read(dir.path().join("index.bin")).unwrap())
+                    .unwrap()
+                    .generation;
+            assert!(snapshot_generation > 0 && snapshot_generation <= 12);
+            assert!(dir.path().join("index.bin.prev").exists());
+        }
+        let store = GlobalStore::open(dir.path()).unwrap();
+        assert_eq!(store.index_report().generation, 12);
+        for i in 0..bodies.len() {
+            assert!(store.has_asset(&format!("r{i}")), "r{i}");
+        }
+        drop(store);
+
+        // Lose the live snapshot: the previous one plus the journal it had
+        // rotated away recover every save up to the lost snapshot, and the
+        // store says so through its generation rather than inventing one.
+        std::fs::remove_file(dir.path().join("index.bin")).unwrap();
+        let mut store = GlobalStore::open(dir.path()).unwrap();
+        let recovered = store.index_report().generation;
+        assert_eq!(recovered, snapshot_generation - 1);
+        for i in 0..recovered as usize {
+            assert!(store.has_asset(&format!("r{i}")), "r{i} recovered");
+        }
+        // The next save writes a snapshot rather than extending a recovered
+        // ledger, and a reopen sees it.
+        store.unpublish_asset("r0").unwrap();
+        assert!(dir.path().join("index.bin").exists());
+        drop(store);
+        let store = GlobalStore::open(dir.path()).unwrap();
+        assert!(!store.has_asset("r0"));
+        assert_eq!(store.index_report().generation, recovered + 1);
+    }
+
+    #[test]
+    fn a_publish_batch_writes_one_record_pack_and_reads_back_from_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let bodies: Vec<Vec<u8>> = (40u8..45).map(|i| vec![i; 256]).collect();
+        let hashes: Vec<ChunkHash> = bodies.iter().map(|b| hash_chunk(b)).collect();
+        {
+            let mut store =
+                GlobalStore::open_with_layout(dir.path(), Some(StoreLayout::Packfiles)).unwrap();
+            store.begin_publish_batch();
+            for (i, (body, hash)) in bodies.iter().zip(&hashes).enumerate() {
+                store.put_chunk(hash, body, 0, body.len() as u32).unwrap();
+                let mut record = rec(&format!("p{i}"), &[hash]);
+                record.meta.push(("i".into(), i.to_string()));
+                store.publish_asset(&record).unwrap();
+            }
+            store.commit_publish_batch().unwrap();
+        }
+        let records_dir = dir.path().join("assets").join("records");
+        let packs: Vec<_> = std::fs::read_dir(&records_dir).unwrap().flatten().collect();
+        assert_eq!(packs.len(), 1, "one file for the batch");
+        assert!(
+            !dir.path().join("assets").join("p0.json").exists(),
+            "no flat record per asset"
+        );
+
+        let store = GlobalStore::open(dir.path()).unwrap();
+        for (i, hash) in hashes.iter().enumerate() {
+            let record = store.get_asset(&format!("p{i}")).unwrap();
+            assert_eq!(record.name, format!("p{i}"));
+            assert_eq!(record.meta, vec![("i".to_string(), i.to_string())]);
+            assert_eq!(record.chunk_table, vec![to_hex(hash)]);
+        }
+        assert!(matches!(
+            store.get_asset("p9"),
+            Err(StoreError::AssetNotFound(_))
+        ));
+        // An export reads the record where it lives.
+        let out = tempfile::tempdir().unwrap();
+        let written = store.export_asset("p3", out.path()).unwrap();
+        assert!(written.contains(&"assets/p3/record.json".to_string()));
+        let exported: AssetRecord = serde_json::from_slice(
+            &std::fs::read(out.path().join("assets/p3/record.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(exported.meta, vec![("i".to_string(), "3".to_string())]);
+    }
+
+    #[test]
+    fn replaced_and_unpublished_records_leave_packs_gc_reclaims() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = vec![50u8; 300];
+        let b = vec![51u8; 300];
+        let (ha, hb) = (hash_chunk(&a), hash_chunk(&b));
+        let mut store = GlobalStore::open(dir.path()).unwrap();
+        store.put_chunk(&ha, &a, 0, 300).unwrap();
+        store.put_chunk(&hb, &b, 0, 300).unwrap();
+        store.publish_asset(&rec("x", &[&ha])).unwrap(); // pack 1
+        store.publish_asset(&rec("y", &[&hb])).unwrap(); // pack 2
+        store.publish_asset(&rec("x", &[&hb])).unwrap(); // pack 3 replaces x
+        let records_dir = dir.path().join("assets").join("records");
+        let count = || std::fs::read_dir(&records_dir).unwrap().flatten().count();
+        assert_eq!(count(), 3);
+        assert_eq!(store.get_asset("x").unwrap().chunk_table, vec![to_hex(&hb)]);
+        assert!(store.unpublish_asset("y").unwrap());
+        assert!(matches!(
+            store.get_asset("y"),
+            Err(StoreError::AssetNotFound(_))
+        ));
+        // Two packs hold nothing live; gc removes them and keeps x's.
+        store.gc(0).unwrap();
+        assert_eq!(count(), 1);
+        drop(store);
+        let store = GlobalStore::open(dir.path()).unwrap();
+        assert_eq!(store.get_asset("x").unwrap().chunk_table, vec![to_hex(&hb)]);
+    }
+
+    #[test]
+    fn a_flat_record_from_an_older_store_is_still_read_and_replaced_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = vec![60u8; 300];
+        let ha = hash_chunk(&a);
+        let mut store = GlobalStore::open(dir.path()).unwrap();
+        store.put_chunk(&ha, &a, 0, 300).unwrap();
+        store.publish_asset(&rec("old", &[&ha])).unwrap();
+        // Make it look like a 1.7 publish: a flat file and no record entry.
+        let flat = dir.path().join("assets").join("old.json");
+        std::fs::write(
+            &flat,
+            serde_json::to_vec_pretty(&rec("old", &[&ha])).unwrap(),
+        )
+        .unwrap();
+        store.index.records.remove("old");
+        assert_eq!(store.get_asset("old").unwrap().name, "old");
+        // Republishing moves it into a pack and drops the flat file.
+        store.publish_asset(&rec("old", &[&ha])).unwrap();
+        assert!(!flat.exists());
+        assert_eq!(store.get_asset("old").unwrap().name, "old");
+    }
+
+    #[test]
+    fn a_v1_snapshot_opens_and_its_first_save_rewrites_it_as_v2() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = vec![70u8; 300];
+        let ha = hash_chunk(&a);
+        {
+            let mut store = GlobalStore::open(dir.path()).unwrap();
+            store.put_chunk(&ha, &a, 0, 300).unwrap();
+            store.publish_asset(&rec("v1", &[&ha])).unwrap();
+            // A flat record and a v1 snapshot, as 1.7 left them.
+            let flat = dir.path().join("assets").join("v1.json");
+            std::fs::write(
+                &flat,
+                serde_json::to_vec_pretty(&rec("v1", &[&ha])).unwrap(),
+            )
+            .unwrap();
+            store.index.records.clear();
+            let mut bytes = encode_index(&store.index);
+            bytes[8..10].copy_from_slice(&1u16.to_le_bytes());
+            // Strip the v2 location tags: one byte per asset, at the end.
+            let body_len = bytes.len() - 32;
+            let mut body = bytes[..body_len].to_vec();
+            body.truncate(body_len - store.index.assets.len());
+            let seal = cavs_hash::hash_chunk(&body);
+            body.extend_from_slice(&seal);
+            std::fs::write(dir.path().join("index.bin"), &body).unwrap();
+            let _ = std::fs::remove_file(dir.path().join("index.log"));
+        }
+        let mut store = GlobalStore::open(dir.path()).unwrap();
+        assert!(store.has_asset("v1"));
+        assert_eq!(store.get_asset("v1").unwrap().name, "v1");
+        assert_eq!(
+            store.index_report().snapshot_bytes,
+            0,
+            "nothing to journal onto"
+        );
+        store
+            .put_chunk(&hash_chunk(b"more"), b"more", 0, 4)
+            .unwrap();
+        store
+            .publish_asset(&rec("v2", &[&hash_chunk(b"more")]))
+            .unwrap();
+        let (_, version) =
+            decode_index_versioned(&std::fs::read(dir.path().join("index.bin")).unwrap()).unwrap();
+        assert_eq!(version, 2);
+        assert!(
+            !dir.path().join("index.log").exists(),
+            "the save was a snapshot"
+        );
+        assert!(store.index_report().snapshot_bytes > 0);
     }
 
     #[test]
