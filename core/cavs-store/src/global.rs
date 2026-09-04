@@ -13,11 +13,11 @@
 //!   assets/<name>.json       per-asset record (tracks/segments by hash),
 //!                            for stores on the segmented index and for
 //!                            assets published before 1.8
-//!   assets/records/<id>.cavsrec  the records of one publish batch, back to
-//!                            back, content-addressed and immutable; the
-//!                            ledger says which bytes of which file are an
-//!                            asset's record. One file per commit rather
-//!                            than one per asset.
+//!   assets/records/<id>.cavsrec  asset records back to back, content-addressed
+//!                            and immutable: a large publish writes one, and
+//!                            a snapshot moves every record still riding in
+//!                            a journal into one. The ledger says which bytes
+//!                            of which file are an asset's record.
 //!   index.bin                chunk ledger: per chunk {sizes, flags,
 //!                            refcount, pack location}; plus the store
 //!                            layout. Compact binary snapshot (CAVSIDX1,
@@ -26,7 +26,8 @@
 //!                            next save.
 //!   index.log                ledger journal: one BLAKE3-sealed record per
 //!                            save holding only the entries that save
-//!                            touched (CAVSIDL1). A save appends here and
+//!                            touched (CAVSIDL1), with a small publish's
+//!                            asset records inline. A save appends here and
 //!                            rewrites index.bin only once the journal has
 //!                            outgrown the snapshot it extends, so what a
 //!                            save costs is what it changed, not what the
