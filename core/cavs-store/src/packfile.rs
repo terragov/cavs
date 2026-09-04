@@ -142,15 +142,22 @@ impl PackWriter {
     }
 
     /// Close the pack: footer, content-addressed rename, sidecar index.
-    /// Returns the pack id (hex) and the recorded entries.
-    pub fn finish(mut self) -> Result<(String, Vec<PackEntry>)> {
+    /// Returns the pack id (hex) and the recorded entries. The pack is synced
+    /// in full before it is named; [`Self::finish_with`] lets the caller say
+    /// how.
+    pub fn finish(self) -> Result<(String, Vec<PackEntry>)> {
+        self.finish_with(crate::sync::SyncMode::Full)
+    }
+
+    /// [`Self::finish`], syncing the pack as `mode` says.
+    pub fn finish_with(mut self, mode: crate::sync::SyncMode) -> Result<(String, Vec<PackEntry>)> {
         let mut footer = Vec::with_capacity(PACK_FOOTER_LEN as usize);
         footer.extend_from_slice(&PACK_FOOTER_MAGIC);
         footer.extend_from_slice(&self.hasher.finalize());
         self.out.write_all(&footer)?;
         self.out.flush()?;
         let file = self.out.into_inner().map_err(|e| e.into_error())?;
-        file.sync_all()?;
+        crate::sync::sync_file(&file, mode)?;
         drop(file);
 
         // Pack id = BLAKE3 of the whole file (streamed; packs can be large).

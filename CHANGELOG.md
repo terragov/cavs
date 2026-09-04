@@ -6,6 +6,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`cavs-store`: the caller chooses what a sync waits for.** `SyncMode`
+  (`Full` — `F_FULLFSYNC` on macOS, what Rust's `sync_all` does there;
+  `Fsync` — `fsync(2)`, what SQLite and PostgreSQL do by default; `Barrier`
+  — `F_BARRIERFSYNC`, ordering without a flush) and
+  `GlobalStore::set_sync_mode`, applied to the packfile, the record pack, the
+  ledger journal and snapshot and their directory syncs.
+  `PackWriter::finish_with` takes the mode; `finish` stays `Full`. The write
+  order — chunks before the ledger that names them — is kept in every mode.
+  The default is unchanged: `Full`.
+
 ### Changed
 
 - **`cavs-store`: a save costs what it changed, not what the store holds.**
@@ -19,15 +31,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `index.bin.prev` replays the journal that snapshot had rotated away
     (`index.log.prev`). `IndexReport` gained `journal_bytes` and
     `snapshot_bytes`; `store index-inspect` prints them.
-  - The records of a publish batch go into one content-addressed, immutable
-    file, `assets/records/<hex>.cavsrec`, and the ledger holds each asset's
-    byte range in it — one file and one fsync per publish instead of four
-    filesystem calls per asset in a directory holding every asset the store
-    has. `get_asset` and the exports read the range; flat `assets/<name>.json`
-    files from earlier publishes are still read, and are replaced in place by
-    a republish. `gc` deletes record packs no live asset points into. The
-    segmented index keeps flat records, and `index-migrate` writes them out
-    for every asset in a pack first.
+  - The records of a publish ride inside the journal record that publishes
+    them, so the ledger and the records are one append and one sync; the
+    ledger holds each asset's byte range in the journal. When a snapshot is
+    written, every record still living in a journal moves into one
+    content-addressed, immutable `assets/records/<hex>.cavsrec` the snapshot
+    can name. `get_asset` and the exports read the range wherever it is; flat
+    `assets/<name>.json` files from earlier publishes are still read, and are
+    replaced in place by a republish. `gc` deletes record packs no live asset
+    points into. The segmented index keeps flat records, and `index-migrate`
+    writes them out for every asset in a pack or a journal first.
   - The snapshot format is v2 (record locations per asset); a 1.7 reader
     rejects it rather than opening a snapshot and missing the saves its
     journal holds. A v1 snapshot opens and its first save writes v2.
