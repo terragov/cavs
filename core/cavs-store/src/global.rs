@@ -76,6 +76,9 @@ pub enum StoreError {
     },
     #[error("{0}")]
     NotExportable(String),
+    /// A save on a handle from [`GlobalStore::open_read_only`].
+    #[error("store was opened read-only")]
+    ReadOnly,
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -350,6 +353,19 @@ pub struct GlobalStore {
     /// record carries inline (monolithic mode). Read through before the
     /// ledger has a location for them.
     pending_records: BTreeMap<String, Vec<u8>>,
+    /// Opened with [`GlobalStore::open_read_only`]: read the ledger, repair
+    /// nothing, write nothing.
+    ///
+    /// Every repair an ordinary open performs assumes it is the only process
+    /// here, and several of them delete exactly what a *live* writer has in
+    /// flight — `index.bin.tmp` between its two renames, a `.part` pack being
+    /// filled, a half-staged record pack. That is correct after a crash and
+    /// wrong beside a writer: it made the writer's own rename fail with
+    /// `ENOENT`. So a reader does none of it, and reads the ledger as it stands
+    /// — which the on-disk formats already allow, since a torn journal append
+    /// stops a replay at the last sealed record and a snapshot is replaced by
+    /// rename.
+    read_only: bool,
 }
 
 impl GlobalStore {
@@ -358,12 +374,36 @@ impl GlobalStore {
         Self::open_with_layout(root, None)
     }
 
+    /// Open a store to read it, without performing any of the repairs an
+    /// ordinary open performs.
+    ///
+    /// For a second process that wants to read a store somebody else is writing.
+    /// It creates nothing, deletes nothing and moves nothing, so it cannot take
+    /// the ground out from under a live writer; the cost is that a store left
+    /// mid-crash reads as it stood before the interrupted save, which is a state
+    /// a reader could have seen a moment earlier rather than a wrong one. Saving
+    /// through such a handle is refused — see [`Self::read_only`].
+    pub fn open_read_only(root: &Path) -> Result<Self> {
+        Self::open_inner(root, None, true)
+    }
+
+    /// Whether this handle was opened with [`Self::open_read_only`].
+    pub fn read_only(&self) -> bool {
+        self.read_only
+    }
+
     /// Open a store; `layout` is applied only when the store is newly
     /// created. Opening an existing store with a *different* requested
     /// layout is an error (a store never changes layout in place).
     pub fn open_with_layout(root: &Path, layout: Option<StoreLayout>) -> Result<Self> {
-        std::fs::create_dir_all(root.join("chunks"))?;
-        std::fs::create_dir_all(root.join("assets"))?;
+        Self::open_inner(root, layout, false)
+    }
+
+    fn open_inner(root: &Path, layout: Option<StoreLayout>, read_only: bool) -> Result<Self> {
+        if !read_only {
+            std::fs::create_dir_all(root.join("chunks"))?;
+            std::fs::create_dir_all(root.join("assets"))?;
+        }
 
         // Segmented-index stores (Round 3B, opted in via
         // [`Self::migrate_index_to_segmented`]) open by mmap: the chunk
@@ -385,7 +425,9 @@ impl GlobalStore {
                 layout: seg.layout,
                 generation: seg.generation,
             };
-            Self::sweep_part_packs(root)?;
+            if !read_only {
+                Self::sweep_part_packs(root)?;
+            }
             let store = Self {
                 root: root.to_path_buf(),
                 index,
@@ -403,8 +445,11 @@ impl GlobalStore {
                 journal_budget: None,
                 sync_mode: SyncMode::Full,
                 pending_records: BTreeMap::new(),
+                read_only,
             };
-            store.restore_quarantined_packs()?;
+            if !read_only {
+                store.restore_quarantined_packs()?;
+            }
             return Ok(store);
         }
 
@@ -412,8 +457,12 @@ impl GlobalStore {
         let prev_path = root.join("index.bin.prev");
         let json_path = root.join("index.json");
         // A crash mid-save can leave a temp snapshot behind; the live ledger
-        // was never touched, so it is safe to drop.
-        let _ = std::fs::remove_file(bin_path.with_extension("bin.tmp"));
+        // was never touched, so it is safe to drop. Not for a reader: beside a
+        // *live* writer that file is not a leftover, it is the snapshot being
+        // staged, and removing it makes the writer's rename fail.
+        if !read_only {
+            let _ = std::fs::remove_file(bin_path.with_extension("bin.tmp"));
+        }
         let log_path = root.join(JOURNAL_FILE);
         let log_prev_path = root.join(JOURNAL_PREV_FILE);
         let (mut index, snapshot_bytes, mut journal_bytes) =
@@ -435,8 +484,12 @@ impl GlobalStore {
                     // A pre-1.8 ledger never had a journal; anything by that
                     // name is a stray and must not be replayed over it — and
                     // a record it claims lives in one is not to be believed.
-                    let _ = std::fs::remove_file(&log_path);
-                    let _ = std::fs::remove_file(&log_prev_path);
+                    // A reader does not delete the strays, it just does not
+                    // believe them either.
+                    if !read_only {
+                        let _ = std::fs::remove_file(&log_path);
+                        let _ = std::fs::remove_file(&log_prev_path);
+                    }
                     index
                         .records
                         .retain(|_, at| matches!(at, RecordRef::Pack { .. }));
@@ -447,17 +500,25 @@ impl GlobalStore {
                         layout: layout.unwrap_or_default(),
                         ..Index::default()
                     };
-                    // A journal without a snapshot describes nothing this
-                    // store can extend.
-                    let _ = std::fs::remove_file(&log_path);
-                    let _ = std::fs::remove_file(&log_prev_path);
-                    // Persist immediately: the layout is a creation-time property
-                    // and must survive even if nothing is published yet.
-                    let tmp = bin_path.with_extension("bin.tmp");
-                    let encoded = encode_index(&index);
-                    std::fs::write(&tmp, &encoded)?;
-                    std::fs::rename(&tmp, &bin_path)?;
-                    (index, encoded.len() as u64, 0)
+                    // Nothing on disk to read, and a reader does not create a
+                    // store: it reads as empty, which is what an absent ledger
+                    // means. Everything below this is the creation half.
+                    if read_only {
+                        (index, 0, 0)
+                    } else {
+                        // A journal without a snapshot describes nothing this
+                        // store can extend.
+                        let _ = std::fs::remove_file(&log_path);
+                        let _ = std::fs::remove_file(&log_prev_path);
+                        // Persist immediately: the layout is a creation-time
+                        // property and must survive even if nothing is published
+                        // yet.
+                        let tmp = bin_path.with_extension("bin.tmp");
+                        let encoded = encode_index(&index);
+                        std::fs::write(&tmp, &encoded)?;
+                        std::fs::rename(&tmp, &bin_path)?;
+                        (index, encoded.len() as u64, 0)
+                    }
                 }
             };
         if snapshot_bytes > 0 {
@@ -466,7 +527,10 @@ impl GlobalStore {
             // off so the next append starts from a record boundary rather
             // than behind bytes no replay will ever get past.
             let scan = replay_journal(&mut index, &log_path, JournalFile::Live)?;
-            if scan.truncate_to < scan.file_len {
+            // Cutting the tail is a repair, and a reader does not make it: what
+            // it reads past the last sealed record is nothing either way, and
+            // beside a live writer those bytes are a record being appended.
+            if scan.truncate_to < scan.file_len && !read_only {
                 std::fs::OpenOptions::new()
                     .write(true)
                     .open(&log_path)?
@@ -482,7 +546,9 @@ impl GlobalStore {
                 });
             }
         }
-        Self::sweep_part_packs(root)?;
+        if !read_only {
+            Self::sweep_part_packs(root)?;
+        }
         let store = Self {
             root: root.to_path_buf(),
             index,
@@ -497,10 +563,13 @@ impl GlobalStore {
             journal_budget: None,
             sync_mode: SyncMode::Full,
             pending_records: BTreeMap::new(),
+            read_only,
         };
         // A ledger recovered from a previous generation may reference packs
         // a newer GC had already quarantined; bring them back.
-        store.restore_quarantined_packs()?;
+        if !read_only {
+            store.restore_quarantined_packs()?;
+        }
         Ok(store)
     }
 
@@ -2251,6 +2320,13 @@ impl GlobalStore {
     /// anywhere in this sequence loses at most the in-memory batch, never
     /// the store.
     fn save_index(&mut self) -> Result<()> {
+        // Every durable mutation reaches the disk through here, so this is the
+        // one place a read-only handle has to be refused. Refused rather than
+        // ignored: silently dropping a save would leave the caller believing it
+        // had written, which is worse than an error it can read.
+        if self.read_only {
+            return Err(StoreError::ReadOnly);
+        }
         // Segmented mode: the overlay becomes one delta segment and a new
         // generation — the ledger is never rewritten whole.
         if let Some(seg) = &mut self.seg {
@@ -3361,6 +3437,113 @@ mod tests {
             signer_pubkey: None,
             meta: vec![],
         }
+    }
+
+    /// A read-only open repairs nothing, which is the whole of what it is for.
+    ///
+    /// The repairs an ordinary open performs delete exactly what a live writer
+    /// has in flight. This stages the three files each of them targets and
+    /// asserts a read-only open leaves all three where they are — the writer's
+    /// staged snapshot above all, whose removal made the writer's own rename
+    /// fail with `ENOENT` when a reader wandered past at the wrong moment.
+    #[test]
+    fn a_read_only_open_does_not_repair_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("store");
+        let a = vec![7u8; 1000];
+        let ha = hash_chunk(&a);
+        {
+            let mut store = GlobalStore::open(&root).unwrap();
+            store.put_chunk(&ha, &a, 0, a.len() as u32).unwrap();
+            store.publish_asset(&rec("one", &[&ha])).unwrap();
+        }
+
+        // What a writer has in flight, in the three shapes an open would clear.
+        let staged_snapshot = root.join("index.bin.tmp");
+        std::fs::write(&staged_snapshot, b"a snapshot being staged").unwrap();
+        let packs = root.join("packs");
+        std::fs::create_dir_all(&packs).unwrap();
+        let part_pack = packs.join("inflight.part");
+        std::fs::write(&part_pack, b"a pack being filled").unwrap();
+        let torn = root.join("index.log");
+        let journal_before = std::fs::read(&torn).unwrap_or_default();
+        {
+            use std::io::Write as _;
+            std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&torn)
+                .unwrap()
+                .write_all(b"half a record")
+                .unwrap();
+        }
+        let torn_len = std::fs::metadata(&torn).unwrap().len();
+
+        {
+            let store = GlobalStore::open_read_only(&root).unwrap();
+            assert!(store.read_only());
+            // It still reads the store: the ledger is there, torn tail and all.
+            let (got, _, _) = store.read_chunk_stored(&ha).unwrap();
+            assert_eq!(got.len(), 1000);
+            assert!(store.asset_names().iter().any(|n| n == "one"));
+        }
+
+        assert!(
+            staged_snapshot.exists(),
+            "a reader deleted the snapshot a writer was staging"
+        );
+        assert!(part_pack.exists(), "a reader deleted a pack being filled");
+        assert_eq!(
+            std::fs::metadata(&torn).unwrap().len(),
+            torn_len,
+            "a reader truncated the journal a writer was appending to"
+        );
+
+        // And a writer still repairs all three, so nothing was lost — only
+        // deferred to the process that is allowed to do it.
+        {
+            let store = GlobalStore::open(&root).unwrap();
+            assert!(!store.read_only());
+        }
+        assert!(!staged_snapshot.exists());
+        assert!(!part_pack.exists());
+        assert_eq!(
+            std::fs::read(&torn).unwrap_or_default(),
+            journal_before,
+            "the writer should have cut the torn tail back"
+        );
+    }
+
+    /// Read-only is a property of the handle: a save through one is refused
+    /// rather than quietly dropped.
+    #[test]
+    fn a_read_only_store_refuses_to_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("store");
+        let a = vec![3u8; 512];
+        let ha = hash_chunk(&a);
+        {
+            let mut store = GlobalStore::open(&root).unwrap();
+            store.put_chunk(&ha, &a, 0, a.len() as u32).unwrap();
+            store.publish_asset(&rec("one", &[&ha])).unwrap();
+        }
+        let mut store = GlobalStore::open_read_only(&root).unwrap();
+        let b = vec![4u8; 512];
+        let hb = hash_chunk(&b);
+        store.put_chunk(&hb, &b, 0, b.len() as u32).unwrap();
+        match store.publish_asset(&rec("two", &[&hb])) {
+            Err(StoreError::ReadOnly) => {}
+            Err(e) => panic!("expected ReadOnly, got {e}"),
+            Ok(()) => panic!("a read-only store saved"),
+        }
+        drop(store);
+        // Nothing landed: the store is what the writer left.
+        let store = GlobalStore::open_read_only(&root).unwrap();
+        assert!(store.asset_names().iter().any(|n| n == "one"));
+        assert!(
+            !store.asset_names().iter().any(|n| n == "two"),
+            "a refused save left something behind"
+        );
     }
 
     #[test]
