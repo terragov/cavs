@@ -338,6 +338,23 @@ impl FsObjectStore {
     }
 }
 
+/// A name no other writer of a temporary file can be using right now.
+///
+/// The process id alone is not that: two threads of one process storing the
+/// same object at once — a server answering two pushes, an agent running two
+/// tools — would both write `<id>.<pid>`, and one would publish the file while
+/// the other was still truncating and refilling it. The counter tells the
+/// writers of one process apart; the process id, the processes.
+pub(crate) fn writer_suffix() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    format!(
+        "{}.{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
 impl ObjectStore for FsObjectStore {
     fn put_object(&self, kind: ObjectKind, bytes: &[u8]) -> Result<ObjectId> {
         let max = self.limits.max_len_for(kind);
@@ -362,7 +379,7 @@ impl ObjectStore for FsObjectStore {
         let tmp = self
             .root
             .join("tmp")
-            .join(format!("{}.{}", id.to_hex(), std::process::id()));
+            .join(format!("{}.{}", id.to_hex(), writer_suffix()));
         {
             let mut f = fs::File::create(&tmp).map_err(io_err("create temporary object"))?;
             f.write_all(LOOSE_MAGIC).map_err(io_err("write object"))?;
@@ -666,6 +683,53 @@ mod tests {
         let id = store.put_object(ObjectKind::Tree, b"scratch").unwrap();
         assert_eq!(store.flush().unwrap(), 0);
         assert_eq!(store.get_object(&id).unwrap().bytes, b"scratch");
+    }
+
+    /// Many threads of one process storing the same object while others read
+    /// it: every write succeeds, and a reader that finds the object finds it
+    /// whole — never a file another writer is still filling.
+    #[test]
+    fn concurrent_writers_in_one_process_never_publish_a_torn_object() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        let (_dir, store) = store();
+        let torn = AtomicUsize::new(0);
+        for round in 0..16u8 {
+            let mut bytes = vec![7u8; 512 * 1024];
+            bytes[0] = round;
+            let id = ObjectId::compute(ObjectKind::Tree, &bytes);
+            let done = AtomicBool::new(false);
+            std::thread::scope(|scope| {
+                for _ in 0..4 {
+                    scope.spawn(|| {
+                        while !done.load(Ordering::Acquire) {
+                            if store.has_object(&id).unwrap() {
+                                match store.get_object(&id) {
+                                    Ok(object) if object.bytes == bytes => {}
+                                    _ => {
+                                        torn.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+                let writers: Vec<_> = (0..16)
+                    .map(|_| scope.spawn(|| store.put_object(ObjectKind::Tree, &bytes).unwrap()))
+                    .collect();
+                for writer in writers {
+                    assert_eq!(writer.join().unwrap(), id);
+                }
+                done.store(true, Ordering::Release);
+            });
+            assert_eq!(store.get_object(&id).unwrap().bytes, bytes);
+        }
+        assert_eq!(
+            torn.load(Ordering::Relaxed),
+            0,
+            "a reader saw a torn object"
+        );
+        // And every writer cleaned up after itself.
+        assert_eq!(fs::read_dir(store.root().join("tmp")).unwrap().count(), 0);
     }
 
     #[test]

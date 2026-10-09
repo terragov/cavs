@@ -218,7 +218,12 @@ impl Promises {
     }
 
     fn rewrite(&self, log: &PromiseLog) -> Result<()> {
-        let temporary = self.path.with_extension("tmp");
+        // Its own name: a fixed `.tmp` beside the log is shared by every
+        // process compacting it, and two of them would interleave their
+        // writes into one file before either renamed it into place.
+        let temporary = self
+            .path
+            .with_extension(format!("tmp.{}", crate::store::writer_suffix()));
         {
             let mut file =
                 fs::File::create(&temporary).map_err(io_err("rewrite the promise log"))?;

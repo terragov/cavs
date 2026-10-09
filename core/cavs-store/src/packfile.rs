@@ -88,10 +88,25 @@ pub struct PackWriter {
     entries: Vec<PackEntry>,
 }
 
+/// The process id and a counter: unique among the writers of this process and
+/// of every other one.
+fn writer_suffix() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    format!(
+        "{}.{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
 impl PackWriter {
     pub fn create(packs_dir: &Path) -> Result<Self> {
         std::fs::create_dir_all(packs_dir)?;
-        let tmp_path = packs_dir.join(format!("ingest-{}.cavspack.part", std::process::id()));
+        // Per writer, not per process: two threads ingesting at once would
+        // otherwise truncate each other's pack. Still `*.part`, so an open
+        // ignores it and a sweep removes it if the writer never finishes.
+        let tmp_path = packs_dir.join(format!("ingest-{}.cavspack.part", writer_suffix()));
         let mut out = BufWriter::new(File::create(&tmp_path)?);
         let mut header = Vec::with_capacity(PACK_HEADER_LEN as usize);
         header.extend_from_slice(&PACK_MAGIC);
