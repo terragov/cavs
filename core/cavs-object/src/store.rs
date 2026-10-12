@@ -175,7 +175,13 @@ impl FsObjectStore {
         let mut directories: BTreeSet<PathBuf> = BTreeSet::new();
         let mut forced = 0usize;
         for path in &pending {
-            match fs::File::open(path) {
+            // Write access on Windows: FlushFileBuffers refuses a read-only
+            // handle with "Access is denied". Elsewhere a read handle syncs.
+            match fs::OpenOptions::new()
+                .read(true)
+                .write(cfg!(windows))
+                .open(path)
+            {
                 Ok(file) => {
                     file.sync_all().map_err(io_err("sync object"))?;
                     forced += 1;
