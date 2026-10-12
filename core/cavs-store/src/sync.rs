@@ -35,6 +35,37 @@ pub enum SyncMode {
 }
 
 /// Sync `file` (or a directory handle) as `mode` says.
+/// Open `path` for appending, creating it, with a handle that can also be
+/// synced and truncated.
+///
+/// On Unix that is `O_APPEND`, whose writes land at the end atomically even
+/// with other writers. Windows has no such flag: Rust's `append(true)` asks for
+/// `FILE_APPEND_DATA` *without* `FILE_WRITE_DATA`, and `FlushFileBuffers`
+/// (`sync_all`) and `SetEndOfFile` (`set_len`) both need the latter — so an
+/// append-mode journal failed its first fsync with "Access is denied" and
+/// nothing could be stored. There the file is opened for writing and the
+/// cursor put at the end; every writer of these files holds the store's lock.
+pub fn open_append(path: &std::path::Path) -> io::Result<File> {
+    #[cfg(windows)]
+    {
+        use std::io::Seek as _;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        file.seek(io::SeekFrom::End(0))?;
+        Ok(file)
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+    }
+}
+
 pub fn sync_file(file: &File, mode: SyncMode) -> io::Result<()> {
     match mode {
         SyncMode::Full => file.sync_all(),
@@ -80,6 +111,29 @@ fn barrier(file: &File) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_append_handle_syncs_and_truncates() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("journal");
+        std::fs::write(&path, b"before").unwrap();
+        let mut f = super::open_append(&path).unwrap();
+        f.write_all(b"+after").unwrap();
+        super::sync_file(&f, super::SyncMode::Full).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"before+after");
+        // Cut back to a record boundary, as a failed journal append does
+        // before it gives up the handle. (After a truncation the cursor is
+        // the caller's business: O_APPEND moves it, a Windows handle does not.)
+        f.set_len(6).unwrap();
+        drop(f);
+        assert_eq!(std::fs::read(&path).unwrap(), b"before");
+        // A new handle appends after what is left.
+        let mut f = super::open_append(&path).unwrap();
+        f.write_all(b"!").unwrap();
+        drop(f);
+        assert_eq!(std::fs::read(&path).unwrap(), b"before!");
+    }
+
     use super::*;
     use std::io::Write as _;
 
@@ -91,6 +145,9 @@ mod tests {
             let mut f = File::create(&path).unwrap();
             f.write_all(b"bytes").unwrap();
             sync_file(&f, mode).unwrap();
+            // A directory opens as a file only on Unix; Windows has nothing
+            // to sync there (NTFS journals its metadata).
+            #[cfg(unix)]
             sync_file(&File::open(dir.path()).unwrap(), mode).unwrap();
         }
     }

@@ -833,10 +833,7 @@ fn read_assets(path: &Path) -> Result<BTreeMap<String, Vec<String>>> {
 }
 
 fn wal_append(dir: &Path, op: &str, generation: u64) -> Result<()> {
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("wal.log"))?;
+    let mut f = crate::sync::open_append(&dir.join("wal.log"))?;
     writeln!(f, "{{\"op\":\"{op}\",\"gen\":{generation}}}")?;
     Ok(())
 }
