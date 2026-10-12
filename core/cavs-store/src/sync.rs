@@ -121,7 +121,14 @@ mod tests {
         f.write_all(b"+after").unwrap();
         super::sync_file(&f, super::SyncMode::Full).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"before+after");
+        // Cut back to a record boundary, as a failed journal append does
+        // before it gives up the handle. (After a truncation the cursor is
+        // the caller's business: O_APPEND moves it, a Windows handle does not.)
         f.set_len(6).unwrap();
+        drop(f);
+        assert_eq!(std::fs::read(&path).unwrap(), b"before");
+        // A new handle appends after what is left.
+        let mut f = super::open_append(&path).unwrap();
         f.write_all(b"!").unwrap();
         drop(f);
         assert_eq!(std::fs::read(&path).unwrap(), b"before!");
