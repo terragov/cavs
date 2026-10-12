@@ -46,6 +46,20 @@ jobs:
       - name: Test
         run: cargo test --all
 
+  # The storage crates CAVS DB builds on, on Windows. Its self-hosted server
+  # ships for Windows Server, and until this ran nothing here did: an
+  # append-mode journal could not be fsynced there ("Access is denied") and no
+  # repository could store a byte.
+  windows-storage:
+    name: storage crates on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test -p cavs-store -p cavs-object -p cavs-format -p cavs-hash -p cavs-chunker
+
   lfs-e2e:
     name: git-lfs e2e
     runs-on: ubuntu-latest

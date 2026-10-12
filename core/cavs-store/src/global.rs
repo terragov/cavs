@@ -2487,10 +2487,7 @@ impl GlobalStore {
         use std::io::Write as _;
         let path = self.root.join(JOURNAL_FILE);
         let created = self.journal_bytes == 0;
-        let mut f = std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&path)?;
+        let mut f = crate::sync::open_append(&path)?;
         let written = f
             .write_all(record)
             .and_then(|_| sync_file(&f, self.sync_mode));

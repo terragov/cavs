@@ -159,11 +159,7 @@ impl Promises {
                 "'{remote}' is not a usable remote name in a promise log"
             )));
         }
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)
-            .map_err(io_err("open the promise log"))?;
+        let mut file = open_append(&self.path).map_err(io_err("open the promise log"))?;
         let mut buffer = String::with_capacity(ids.len() * 72);
         for id in ids {
             buffer.push_str(&id.to_hex());
@@ -182,11 +178,7 @@ impl Promises {
         if ids.is_empty() {
             return Ok(());
         }
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)
-            .map_err(io_err("open the promise log"))?;
+        let mut file = open_append(&self.path).map_err(io_err("open the promise log"))?;
         let mut buffer = String::with_capacity(ids.len() * 68);
         for id in ids {
             buffer.push_str(&id.to_hex());
@@ -240,6 +232,28 @@ impl Promises {
 
 fn io_err(what: &'static str) -> impl Fn(std::io::Error) -> ObjectError {
     move |e| ObjectError::Corrupt(format!("failed to {what}: {e}"))
+}
+
+/// Open the log for appending with a handle that can be synced. On Windows
+/// `append(true)` lacks the write access `sync_all` needs ("Access is
+/// denied"), so the file is opened for writing and the cursor put at the
+/// end; the log's writers hold the store's lock. As `cavs_store::sync::open_append`.
+fn open_append(path: &std::path::Path) -> std::io::Result<fs::File> {
+    #[cfg(windows)]
+    {
+        use std::io::Seek as _;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        file.seek(std::io::SeekFrom::End(0))?;
+        Ok(file)
+    }
+    #[cfg(not(windows))]
+    {
+        fs::OpenOptions::new().append(true).create(true).open(path)
+    }
 }
 
 #[cfg(test)]
