@@ -264,6 +264,12 @@ pub struct FragmentationReport {
     pub packs: Vec<PackFragmentation>,
 }
 
+/// What [`GlobalStore::repack_run_with`] asks of each chunk it moves: given
+/// the chunk's hash, stored bytes, flags and raw length, a replacement stored
+/// form and its flags, or `None` to move it as it is.
+pub type ChunkTransform<'a> =
+    dyn FnMut(&ChunkHash, &[u8], u32, u32) -> Result<Option<(Vec<u8>, u32)>> + 'a;
+
 /// What a repack pass intends to do (from [`GlobalStore::repack_plan`]).
 #[derive(Debug, Clone, Default)]
 pub struct RepackPlan {
@@ -287,6 +293,8 @@ pub struct RepackOutcome {
     pub packs_rewritten: u64,
     pub packs_written: u64,
     pub chunks_moved: u64,
+    /// Chunks [`GlobalStore::repack_run_with`] wrote in a new stored form.
+    pub chunks_reencoded: u64,
     pub bytes_read: u64,
     pub bytes_written: u64,
     pub quarantined: Vec<String>,
@@ -858,6 +866,27 @@ impl GlobalStore {
     /// Note: exported static trees hold copies of the old packs; re-export
     /// affected assets (and their meta-packs) after a repack.
     pub fn repack_run(&mut self, plan: &RepackPlan, dry_run: bool) -> Result<RepackOutcome> {
+        self.repack_run_with(plan, dry_run, &mut |_, _, _, _| Ok(None))
+    }
+
+    /// [`Self::repack_run`], re-encoding chunks on the way through: for every
+    /// live chunk the plan moves, `transform(hash, stored, flags, len_raw)`
+    /// may return a replacement stored form and its flags, which is written
+    /// in place of the old one and recorded in the ledger. `None` copies the
+    /// chunk as it is.
+    ///
+    /// The chunk's identity does not change — it is the hash of its raw
+    /// bytes, which a replacement must decode to — only how it is stored: a
+    /// caller recompressing cold data at a higher level, say. The store does
+    /// not decode either form, so it is the caller's to make sure the
+    /// replacement is the same chunk. Copy-on-write like `repack_run`: the
+    /// old packs stay readable until the ledger no longer names them.
+    pub fn repack_run_with(
+        &mut self,
+        plan: &RepackPlan,
+        dry_run: bool,
+        transform: &mut ChunkTransform<'_>,
+    ) -> Result<RepackOutcome> {
         let mut outcome = RepackOutcome::default();
         if plan.is_empty() {
             return Ok(outcome);
@@ -889,10 +918,23 @@ impl GlobalStore {
             // preferred size), then repoint the ledger.
             let mut writer: Option<PackWriter> = None;
             let mut finished: Vec<(String, Vec<packfile::PackEntry>)> = Vec::new();
+            // Chunks whose stored form changed: new length and flags.
+            let mut reencoded: HashMap<String, (u32, u32)> = HashMap::new();
             for (hex, _) in &chunks {
                 let hash = from_hex(hex).ok_or_else(|| StoreError::BadHash(hex.clone()))?;
                 let (stored, flags, len_raw) = self.read_chunk_stored(&hash)?;
                 outcome.bytes_read += stored.len() as u64;
+                let (stored, flags) = match transform(&hash, &stored, flags, len_raw)? {
+                    Some((replacement, new_flags)) => {
+                        let len = u32::try_from(replacement.len()).map_err(|_| {
+                            StoreError::Io(std::io::Error::other("re-encoded chunk over 4 GiB"))
+                        })?;
+                        reencoded.insert(hex.clone(), (len, new_flags));
+                        outcome.chunks_reencoded += 1;
+                        (replacement, new_flags)
+                    }
+                    None => (stored, flags),
+                };
                 if writer.is_none() {
                     writer = Some(PackWriter::create(&self.packs_dir())?);
                 }
@@ -920,9 +962,14 @@ impl GlobalStore {
             for (pack_hex, entries) in &finished {
                 for entry in entries {
                     let hex = to_hex(&entry.hash);
+                    let form = reencoded.get(&hex).copied();
                     self.chunk_update(&hex, |info| {
                         info.pack = Some(pack_hex.clone());
                         info.pack_offset = Some(entry.offset);
+                        if let Some((len_stored, flags)) = form {
+                            info.len_stored = len_stored;
+                            info.flags = flags;
+                        }
                     });
                 }
             }
@@ -3993,6 +4040,68 @@ mod tests {
         drop(store);
         let store = GlobalStore::open(dir.path()).unwrap();
         assert_eq!(store.verify().unwrap(), 20);
+    }
+
+    /// A repack can re-encode the chunks it moves: the new form is what the
+    /// store reads, verifies and remembers after a reopen, and a chunk the
+    /// transform leaves alone moves as it was. With the monolithic ledger and
+    /// with the segmented one.
+    #[test]
+    fn repack_with_a_transform_stores_the_new_form() {
+        for segmented in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut store =
+                GlobalStore::open_with_layout(dir.path(), Some(StoreLayout::Packfiles)).unwrap();
+            if segmented {
+                store.migrate_index_to_segmented().unwrap();
+            }
+            store.set_preferred_pack_size(1);
+            let raws: Vec<Vec<u8>> = (0..6u8)
+                .map(|i| (0..20_000u32).map(|j| (j % 251) as u8 ^ i).collect())
+                .collect();
+            let hashes: Vec<ChunkHash> = raws.iter().map(|r| hash_chunk(r)).collect();
+            for (i, (raw, h)) in raws.iter().zip(&hashes).enumerate() {
+                store.put_chunk(h, raw, 0, raw.len() as u32).unwrap();
+                store.publish_asset(&rec(&format!("a{i}"), &[h])).unwrap();
+            }
+            store.set_preferred_pack_size(128 * 1024 * 1024);
+            let plan = store.repack_plan();
+            assert!(!plan.is_empty());
+
+            // Every other chunk to zstd (flag bit 0, cavs-format's).
+            let even: HashSet<ChunkHash> = hashes.iter().step_by(2).copied().collect();
+            let mut transform = |h: &ChunkHash, stored: &[u8], flags: u32, _len: u32| {
+                Ok(even.contains(h).then(|| {
+                    assert_eq!(flags, 0);
+                    (zstd::bulk::compress(stored, 19).unwrap(), 1u32)
+                }))
+            };
+            let outcome = store.repack_run_with(&plan, false, &mut transform).unwrap();
+            assert_eq!(outcome.chunks_moved, 6);
+            assert_eq!(outcome.chunks_reencoded, 3);
+
+            let check = |store: &GlobalStore| {
+                for (raw, h) in raws.iter().zip(&hashes) {
+                    let (stored, flags, len_raw) = store.read_chunk_stored(h).unwrap();
+                    let info = store.chunk_info(h).unwrap();
+                    assert_eq!(len_raw as usize, raw.len());
+                    assert_eq!(info.len_stored as usize, stored.len());
+                    assert_eq!(info.flags, flags);
+                    if even.contains(h) {
+                        assert_eq!(flags, 1);
+                        assert!(stored.len() < raw.len() / 4);
+                        assert_eq!(&zstd::bulk::decompress(&stored, raw.len()).unwrap(), raw);
+                    } else {
+                        assert_eq!((flags, &stored), (0, raw));
+                    }
+                }
+                assert_eq!(store.verify().unwrap(), 6);
+            };
+            check(&store);
+            drop(store);
+            let store = GlobalStore::open(dir.path()).unwrap();
+            check(&store);
+        }
     }
 
     #[test]
