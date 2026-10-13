@@ -8,6 +8,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`cavs-store`: a repack can re-encode the chunks it moves.**
+  `GlobalStore::repack_run_with` takes a `ChunkTransform` that may return a
+  new stored form and flags for each live chunk; it is written in place of
+  the old one and recorded in the ledger (monolithic or segmented), and
+  `RepackOutcome::chunks_reencoded` counts them. The chunk's identity does not
+  change, and the store decodes neither form: making sure the replacement is
+  the same chunk is the caller's. `repack_run` is the identity transform.
+  For CAVS DB recompressing cold chunks at a higher zstd level
+  (terragov/cavs-db#204).
+
 - **`cavs-store`: the caller chooses what a sync waits for.** `SyncMode`
   (`Full` — `F_FULLFSYNC` on macOS, what Rust's `sync_all` does there;
   `Fsync` — `fsync(2)`, what SQLite and PostgreSQL do by default; `Barrier`
