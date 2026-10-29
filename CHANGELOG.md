@@ -61,6 +61,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     repository and 121–127 ms at 50,000 objects to 37 ms and 42 ms; the
     ledger's share of a commit no longer grows with the repository.
 
+### Security
+
+- **zstd 0.14** (terragov/cavs#14). The workspace moves from `zstd = "0.13"`
+  to `zstd = "0.14"`, which locks `zstd` 0.14.3, `zstd-safe` 8.2.0 and
+  `zstd-sys` 2.1.2 and clears RUSTSEC-2026-0391, -0398, -0403 and -0410.
+  No call site changed. The bundled libzstd is 1.5.7 on both lines and the
+  stored bytes are unchanged: the same input written by the 0.13 and 0.14
+  builds gives byte-identical packs, pack indexes and index segments (only
+  the random `asset_uuid` differs), and each build verifies, unpacks and
+  appends to `.cavs` files and stores the other wrote.
+
 ## [1.7.0] — Round 3: metadata batching, segmented index, adaptive fetch
 
 ### Added
