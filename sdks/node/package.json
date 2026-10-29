@@ -1,6 +1,6 @@
 {
   "name": "@orelvis15/cavs-sdk",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Node.js SDK for CAVS — analyze, preview, pack, plan, apply, verify and benchmark large-file updates using the native Rust core.",
   "license": "Apache-2.0",
   "repository": {
@@ -28,11 +28,11 @@
     "koffi": "^2.9.0"
   },
   "optionalDependencies": {
-    "@orelvis15/cavs-sdk-linux-x64": "1.7.0",
-    "@orelvis15/cavs-sdk-linux-arm64": "1.7.0",
-    "@orelvis15/cavs-sdk-darwin-x64": "1.7.0",
-    "@orelvis15/cavs-sdk-darwin-arm64": "1.7.0",
-    "@orelvis15/cavs-sdk-win32-x64": "1.7.0"
+    "@orelvis15/cavs-sdk-linux-x64": "1.8.0",
+    "@orelvis15/cavs-sdk-linux-arm64": "1.8.0",
+    "@orelvis15/cavs-sdk-darwin-x64": "1.8.0",
+    "@orelvis15/cavs-sdk-darwin-arm64": "1.8.0",
+    "@orelvis15/cavs-sdk-win32-x64": "1.8.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

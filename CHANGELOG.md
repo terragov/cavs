@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.8.0] — zstd 0.14, re-encoding repack, sync modes, cheaper ledger saves
+
 ### Added
 
 - **`cavs-store`: a repack can re-encode the chunks it moves.**
