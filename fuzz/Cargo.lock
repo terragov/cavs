@@ -57,7 +57,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-format"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "cavs-store",
@@ -82,14 +82,14 @@ dependencies = [
 
 [[package]]
 name = "cavs-hash"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "blake3",
 ]
 
 [[package]]
 name = "cavs-manifest"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-format",
  "cavs-hash",
@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-proto"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "serde",
@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-signature"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "thiserror",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-store"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "cavs-proto",

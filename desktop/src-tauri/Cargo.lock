@@ -508,7 +508,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-analyzer"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "cavs-chunker",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-chunker"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "fastcdc",
 ]
@@ -549,7 +549,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-fetch"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "cavs-hash",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-format"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "cavs-store",
@@ -576,14 +576,14 @@ dependencies = [
 
 [[package]]
 name = "cavs-hash"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "blake3",
 ]
 
 [[package]]
 name = "cavs-manifest"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-format",
  "cavs-hash",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-plan"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "cavs-proto",
@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-proto"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "serde",
@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-sdk-core"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "anyhow",
  "cavs-analyzer",
@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-signature"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "thiserror 2.0.18",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "cavs-store"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "cavs-hash",
  "cavs-proto",

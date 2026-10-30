@@ -28,7 +28,7 @@ members = [
 exclude = ["fuzz", "desktop/src-tauri"]
 
 [workspace.package]
-version = "1.7.0"
+version = "1.8.0"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["Orelvis Lago Vasallo <orelvis15@gmail.com>"]

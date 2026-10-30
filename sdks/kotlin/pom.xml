@@ -6,7 +6,7 @@
 
   <groupId>io.github.orelvis15</groupId>
   <artifactId>cavs-sdk</artifactId>
-  <version>1.7.0</version>
+  <version>1.8.0</version>
   <packaging>jar</packaging>
 
   <name>CAVS SDK</name>
